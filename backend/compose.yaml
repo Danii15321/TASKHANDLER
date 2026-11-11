@@ -1,0 +1,33 @@
+# PostgreSQL pour le développement local uniquement.
+# Lancement : docker compose --env-file .env.postgres up --detach --wait
+name: taskhandler
+
+services:
+  postgres:
+    # PostgreSQL 18.6. L'empreinte fige l'image : un tag peut être republié, pas une empreinte.
+    image: postgres:18-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+    environment:
+      # `:?` arrête Compose si un secret manque : il n'y a aucune valeur de repli.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Secret manquant, voir scripts/generate-dev-env.sh}
+      TASKHANDLER_MIGRATOR_PASSWORD: ${TASKHANDLER_MIGRATOR_PASSWORD:?Secret manquant}
+      TASKHANDLER_APP_PASSWORD: ${TASKHANDLER_APP_PASSWORD:?Secret manquant}
+    ports:
+      # 127.0.0.1 : sans cette adresse, Docker publierait la base sur tout le réseau local.
+      - "127.0.0.1:${TASKHANDLER_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      # Depuis PostgreSQL 18, l'image attend le volume sur ce dossier parent.
+      - taskhandler_postgres_data:/var/lib/postgresql
+      # `ro` : le conteneur ne peut pas réécrire le script qui crée les rôles.
+      - ./docker/postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-init-roles.sh:ro
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # Par TCP : pendant l'initialisation, le serveur temporaire n'écoute que sur le socket
+      # local. Le service n'est donc déclaré prêt qu'une fois les rôles créés.
+      test: ["CMD", "pg_isready", "--host=127.0.0.1", "--dbname=taskhandler", "--username=taskhandler_migrator"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  taskhandler_postgres_data:

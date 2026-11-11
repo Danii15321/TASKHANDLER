@@ -1,0 +1,37 @@
+# Contrôles exécutés avant chaque commit.
+#
+# Ruff et mypy sont lancés via uv : leurs versions viennent donc de `backend/uv.lock`,
+# et il n'existe qu'une seule source de vérité. L'option `--locked` refuse de continuer
+# si ce fichier n'est plus à jour.
+#
+# Les hooks reçoivent `pass_filenames: false` : ils analysent tout `backend/`, car une
+# modification dans un fichier peut provoquer une erreur de type dans un autre.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff (qualité et règles de sécurité)
+        entry: uv run --directory backend --locked ruff check .
+        language: system
+        files: ^backend/
+        pass_filenames: false
+      - id: ruff-format
+        name: ruff (formatage)
+        entry: uv run --directory backend --locked ruff format --check .
+        language: system
+        files: ^backend/
+        pass_filenames: false
+      - id: mypy
+        name: mypy (types, mode strict)
+        entry: uv run --directory backend --locked mypy .
+        language: system
+        files: ^backend/
+        pass_filenames: false
+
+  # Détection de secrets sur tous les fichiers indexés, pas seulement ceux de `backend/`.
+  # La révision est une empreinte de commit : contrairement à une étiquette, elle ne
+  # peut pas être déplacée vers un autre contenu après coup.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1
+    hooks:
+      - id: gitleaks

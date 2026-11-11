@@ -1,0 +1,33 @@
+# Secrets : aucun fichier d'environnement réel ne doit entrer dans l'historique Git.
+# Seul le modèle `.env.example`, qui ne contient que des valeurs factices, est versionné.
+.env
+.env.*
+!.env.example
+
+# Clés et certificats : une clé privée committée doit être considérée comme compromise.
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Environnement virtuel Python, recréé à l'identique à partir de `uv.lock`.
+.venv/
+
+# Fichiers générés par Python.
+__pycache__/
+*.py[cod]
+
+# Caches des outils de qualité.
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Rapports de couverture de tests.
+.coverage
+.coverage.*
+htmlcov/
+
+# Fichiers propres à l'éditeur ou au système.
+.idea/
+.vscode/
+.DS_Store

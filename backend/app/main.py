@@ -1,0 +1,58 @@
+"""Assemblage de l'application.
+
+Il n'y a pas de variable globale `app` : la configuration est chargée à l'appel de la fabrique,
+ce qui permet aux tests de construire une application pour chaque environnement.
+"""
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app.core.config import Settings
+from app.core.errors import register_exception_handlers
+from app.core.logging_config import configure_logging
+from app.core.middleware import RequestContextMiddleware
+from app.db.session import create_database_engine, create_session_factory
+from app.modules.health.router import router as health_router
+
+
+# requires : `app.state.engine` a été défini par `create_app`.
+# assigns  : ferme les connexions du pool à l'arrêt de l'application.
+# ensures  : aucune connexion à PostgreSQL ne survit à l'arrêt du serveur.
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    await app.state.engine.dispose()
+
+
+# requires : `settings` est valide ; si `None`, la configuration vient de l'environnement.
+# assigns  : la configuration globale des journaux, le moteur et les sessions de `app.state`.
+# ensures  : renvoie l'application assemblée, ou lève `ValidationError` si la configuration
+#            est invalide, ce qui empêche le démarrage.
+def create_app(settings: Settings | None = None) -> FastAPI:
+    resolved_settings = settings if settings is not None else Settings()
+    configure_logging(resolved_settings.log_level)
+
+    # Sans documentation, ces trois chemins renvoient 404 : le schéma complet de l'API ne doit
+    # pas être offert à un attaquant en production.
+    docs_enabled = resolved_settings.api_docs_enabled
+    app = FastAPI(
+        title="TaskHandler API",
+        # Le mode debug afficherait les traces d'erreur au client : il n'est jamais activé.
+        debug=False,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+        lifespan=_lifespan,
+    )
+
+    # Le moteur n'ouvre aucune connexion ici : `/health/live` reste disponible si la base est
+    # en panne, et c'est `/health/ready` qui signale cette panne.
+    app.state.engine = create_database_engine(resolved_settings)
+    app.state.session_factory = create_session_factory(app.state.engine)
+
+    app.add_middleware(RequestContextMiddleware)
+    register_exception_handlers(app)
+    app.include_router(health_router)
+    return app

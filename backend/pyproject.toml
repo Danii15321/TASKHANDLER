@@ -1,0 +1,79 @@
+[project]
+name = "taskhandler-backend"
+version = "0.1.0"
+description = "API de planification de tâches dans une grille hebdomadaire"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "alembic>=1.20.1",
+    "asyncpg>=0.32.0",
+    "fastapi>=0.162.2",
+    "pydantic-settings>=2.16.2",
+    "sqlalchemy[asyncio]>=2.1.8",
+    "uvicorn>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16.0",
+    "mypy>=2.4.1",
+    "pre-commit>=4.7.0",
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
+
+# --- Ruff : analyse statique et formatage -----------------------------------
+# La version cible de Python est déduite de `requires-python`.
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle : erreurs de style
+    "W",     # pycodestyle : avertissements
+    "F",     # pyflakes : noms inconnus, imports inutiles
+    "I",     # isort : ordre des imports
+    "N",     # pep8-naming : conventions de nommage
+    "UP",    # pyupgrade : syntaxe moderne
+    "B",     # bugbear : erreurs de conception fréquentes
+    "S",     # flake8-bandit : règles de sécurité (SQL construit, secrets, subprocess...)
+    "A",     # flake8-builtins : pas de masquage des fonctions natives
+    "C4",    # flake8-comprehensions : compréhensions correctes
+    "DTZ",   # flake8-datetimez : interdit les dates sans fuseau horaire
+    "T20",   # flake8-print : pas de `print`, seuls les journaux filtrés sont autorisés
+    "SIM",   # flake8-simplify : simplifications
+    "RET",   # flake8-return : retours cohérents
+    "PTH",   # flake8-use-pathlib : pathlib plutôt que os.path
+    "ASYNC", # flake8-async : pas d'appel bloquant dans une coroutine
+    "RUF",   # règles propres à Ruff
+]
+
+[tool.ruff.lint.per-file-ignores]
+# S101 interdit `assert`, car ces instructions disparaissent avec `python -O`.
+# C'est un vrai risque dans le code de l'application, mais pas dans les tests,
+# où `assert` est le mécanisme normal de pytest.
+"tests/**" = ["S101"]
+
+# --- Mypy : vérification stricte des types ------------------------------------
+[tool.mypy]
+strict = true
+warn_unreachable = true
+# Le plugin officiel fait connaître à mypy les constructeurs générés par Pydantic.
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true # un champ inconnu passé à un modèle est une erreur de type
+init_typed = true        # les arguments d'un modèle sont vérifiés, sans conversion implicite
+
+# --- Pytest ---------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+pythonpath = ["."]         # rend le paquet `app` importable depuis les tests
+addopts = [
+    "--strict-markers",        # un marqueur inconnu est une erreur, pas une faute de frappe ignorée
+    "--strict-config",         # une option de configuration invalide est une erreur
+    "--import-mode=importlib", # évite de modifier `sys.path`
+    "-ra",                     # résume tout test qui n'a pas réussi
+]
+xfail_strict = true        # un test marqué « échec attendu » qui réussit fait échouer la suite
+filterwarnings = ["error"] # un avertissement est traité comme une erreur
