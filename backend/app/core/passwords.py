@@ -1,6 +1,7 @@
 """Hachage des mots de passe avec argon2id, hors de la boucle d'événements et en nombre borné."""
 
 import asyncio
+import secrets
 from collections.abc import Callable
 from functools import partial
 from typing import Annotated
@@ -40,6 +41,33 @@ class PasswordHasherService:
         )
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._queue_timeout_seconds = queue_timeout_seconds
+        # Empreinte d'un mot de passe aléatoire, jetée aussitôt : elle sert de leurre quand le
+        # compte n'existe pas (voir `verify_dummy`).
+        self._dummy_hash: str | None = None
+
+    # requires : rien.
+    # assigns  : calcule et garde l'empreinte leurre, une seule fois par instance.
+    # ensures  : l'empreinte leurre existe ; appelé au démarrage pour que la première connexion
+    #            à un compte inconnu ne soit pas plus lente que les suivantes.
+    async def prepare(self) -> None:
+        if self._dummy_hash is None:
+            self._dummy_hash = await self.hash(secrets.token_urlsafe(32))
+
+    # requires : `plain` est le mot de passe reçu pour un compte inexistant.
+    # assigns  : occupe une place du sémaphore pendant le calcul.
+    # ensures  : effectue une vraie vérification argon2id, toujours en échec : la réponse prend
+    #            le même temps que pour un compte existant, et ne révèle donc pas son existence.
+    async def verify_dummy(self, plain: str) -> None:
+        await self.prepare()
+        dummy_hash = self._dummy_hash
+        if dummy_hash is not None:
+            await self.verify(dummy_hash, plain)
+
+    # requires : `password_hash` est une empreinte argon2 lue en base.
+    # assigns  : rien (calcul immédiat, sans hachage).
+    # ensures  : renvoie `True` si l'empreinte utilise des paramètres plus faibles qu'aujourd'hui.
+    def needs_rehash(self, password_hash: str) -> bool:
+        return self._hasher.check_needs_rehash(password_hash)
 
     # requires : `plain` a déjà passé la politique de mot de passe.
     # assigns  : occupe une place du sémaphore pendant le calcul.

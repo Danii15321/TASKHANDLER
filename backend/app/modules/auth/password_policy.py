@@ -25,6 +25,14 @@ def common_passwords() -> frozenset[str]:
     return frozenset(line for line in lines if line and not line.startswith("#"))
 
 
+# requires : rien.
+# assigns  : rien (fonction pure).
+# ensures  : renvoie le mot de passe en forme NFKC. L'inscription et la connexion passent toutes
+#            deux par ici : sinon, un mot de passe correct pourrait être refusé.
+def normalize_password(password: str) -> str:
+    return unicodedata.normalize("NFKC", password)
+
+
 # requires : `password` contient au plus `MAX_PASSWORD_LENGTH` caractères avant normalisation.
 # assigns  : rien (fonction pure, en dehors du cache de la liste).
 # ensures  : renvoie le mot de passe normalisé en NFKC s'il respecte la politique ; sinon lève
@@ -33,7 +41,7 @@ def validate_password(password: str) -> str:
     # NFKC : une lettre « pleine chasse » (claviers asiatiques) et sa forme ASCII donnent le même
     # mot de passe, quel que soit le clavier utilisé.
     # La connexion devra appliquer exactement la même normalisation avant de vérifier.
-    normalized = unicodedata.normalize("NFKC", password)
+    normalized = normalize_password(password)
 
     if any(unicodedata.category(character) == "Cc" for character in normalized):
         raise ValueError("le mot de passe contient des caractères de contrôle")

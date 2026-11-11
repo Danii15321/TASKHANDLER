@@ -1,13 +1,15 @@
 """Schémas d'entrée de l'authentification."""
 
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from email_validator import EmailNotValidError, validate_email
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
+from app.core.tokens import REFRESH_TOKEN_LENGTH
 from app.modules.auth.password_policy import (
     MAX_PASSWORD_LENGTH,
     ensure_password_unrelated_to_email,
+    normalize_password,
     validate_password,
 )
 
@@ -59,3 +61,51 @@ class RegisterRequest(BaseModel):
     def _password_unrelated_to_email(self) -> Self:
         ensure_password_unrelated_to_email(self.password, self.email)
         return self
+
+
+# À la connexion, aucune politique n'est appliquée : un mot de passe créé avant un changement de
+# politique doit rester utilisable. Seules la longueur maximale et la normalisation comptent.
+LoginPassword = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_PASSWORD_LENGTH, repr=False),
+    AfterValidator(normalize_password),
+]
+# Format exact de `secrets.token_urlsafe(32)` : une valeur différente est refusée avant toute
+# requête en base.
+RefreshTokenValue = Annotated[
+    str,
+    Field(
+        min_length=REFRESH_TOKEN_LENGTH,
+        max_length=REFRESH_TOKEN_LENGTH,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        repr=False,
+    ),
+]
+
+
+class LoginRequest(BaseModel):
+    """Corps de `POST /auth/login`."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    email: NormalizedEmail
+    password: LoginPassword
+
+
+class RefreshRequest(BaseModel):
+    """Corps de `POST /auth/refresh` : le jeton voyage dans le corps, jamais dans l'URL."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    refresh_token: RefreshTokenValue
+
+
+class TokenResponse(BaseModel):
+    """Paire de jetons renvoyée par la connexion et le renouvellement (RFC 6749, section 5.1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    access_token: str = Field(repr=False)
+    refresh_token: str = Field(repr=False)
+    token_type: Literal["bearer"]
+    expires_in: int

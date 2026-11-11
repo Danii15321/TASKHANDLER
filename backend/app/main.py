@@ -16,14 +16,17 @@ from app.core.middleware import RequestContextMiddleware
 from app.core.passwords import PasswordHasherService
 from app.db.session import create_database_engine, create_session_factory
 from app.modules.auth.router import router as auth_router
+from app.modules.auth.router import session_router
 from app.modules.health.router import router as health_router
 
 
-# requires : `app.state.engine` a été défini par `create_app`.
-# assigns  : ferme les connexions du pool à l'arrêt de l'application.
-# ensures  : aucune connexion à PostgreSQL ne survit à l'arrêt du serveur.
+# requires : `app.state` a été rempli par `create_app`.
+# assigns  : calcule l'empreinte leurre au démarrage ; ferme le pool à l'arrêt.
+# ensures  : la première connexion à un compte inconnu n'est pas plus lente que les autres, et
+#            aucune connexion à PostgreSQL ne survit à l'arrêt du serveur.
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await app.state.password_hasher.prepare()
     yield
     await app.state.engine.dispose()
 
@@ -51,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Le moteur n'ouvre aucune connexion ici : `/health/live` reste disponible si la base est
     # en panne, et c'est `/health/ready` qui signale cette panne.
+    app.state.settings = resolved_settings
     app.state.engine = create_database_engine(resolved_settings)
     app.state.session_factory = create_session_factory(app.state.engine)
     app.state.password_hasher = PasswordHasherService(
@@ -66,5 +70,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # `/api/v2`, sans casser les clients existants ni laisser de route oubliée (OWASP API9).
     api_v1 = APIRouter(prefix="/api/v1")
     api_v1.include_router(auth_router)
+    api_v1.include_router(session_router)
     app.include_router(api_v1)
     return app

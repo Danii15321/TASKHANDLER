@@ -21,8 +21,8 @@ phase, pas avant.
 | 1 | Application FastAPI minimale | Terminée |
 | 2 | PostgreSQL et migrations | Terminée |
 | 3 | Intégration continue | Terminée |
-| 4 | Comptes et mots de passe | En relecture |
-| 5 | Authentification et sessions | À faire |
+| 4 | Comptes et mots de passe | Terminée |
+| 5 | Authentification et sessions | En relecture |
 | 6 | Protection contre les abus | À faire |
 | 7 | Vérification d'e-mail et réinitialisation | À faire |
 | 8 | Tâches | À faire |
@@ -113,15 +113,15 @@ rôle applicatif ne peut pas exécuter `DROP TABLE`.
 
 **Objectif :** créer des comptes en protégeant les mots de passe selon l'état de l'art.
 
-- [ ] Rédiger `docs/steps/step-4.md`
-- [ ] Créer la table `users` et sa migration
-- [ ] Normaliser les e-mails et garantir leur unicité en base
-- [ ] Implémenter le hachage argon2id hors de la boucle événementielle
-- [ ] Borner les hachages simultanés pour éviter l'épuisement de la mémoire
-- [ ] Appliquer la politique de mot de passe : 12 à 128 caractères, liste de mots de passe courants
-- [ ] Implémenter `POST /auth/register`
-- [ ] Séparer strictement les schémas d'entrée et de sortie
-- [ ] Tester le hachage, la politique et l'absence du hash dans les réponses
+- [x] Rédiger `docs/steps/step-4.md`
+- [x] Créer la table `users` et sa migration
+- [x] Normaliser les e-mails et garantir leur unicité en base
+- [x] Implémenter le hachage argon2id hors de la boucle événementielle
+- [x] Borner les hachages simultanés pour éviter l'épuisement de la mémoire
+- [x] Appliquer la politique de mot de passe : 12 à 128 caractères, liste de mots de passe courants
+- [x] Implémenter `POST /auth/register`
+- [x] Séparer strictement les schémas d'entrée et de sortie
+- [x] Tester le hachage, la politique et l'absence du hash dans les réponses
 
 **Terminé lorsque :** aucun chemin de code ne peut renvoyer ou journaliser un mot de passe ou son
 empreinte.

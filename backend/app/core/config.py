@@ -29,6 +29,10 @@ APP_DATABASE_ROLE = "taskhandler_app"
 MIGRATION_DATABASE_ROLE = "taskhandler_migrator"
 
 _DATABASE_DRIVER = "postgresql+asyncpg"
+# 64 caractères hexadécimaux = 256 bits, le minimum exigé pour une clé HMAC-SHA256.
+MIN_JWT_SECRET_LENGTH = 64
+# Une clé longue mais faite de quelques caractères répétés (`aaaa…`) n'a presque aucune entropie.
+_MIN_JWT_SECRET_DISTINCT_CHARACTERS = 12
 _MIN_DATABASE_PASSWORD_LENGTH = 24
 _PLACEHOLDER_MARKERS = (
     "change",
@@ -117,6 +121,13 @@ class Settings(BaseSettings):
     password_hash_max_concurrency: int = Field(default=4, ge=1, le=32)
     password_hash_queue_timeout_seconds: int = Field(default=10, ge=1, le=60)
 
+    # Clé de signature des jetons d'accès. Sans valeur par défaut : la changer invalide tous les
+    # jetons d'accès, et sa fuite permettrait de fabriquer des jetons pour n'importe quel compte.
+    jwt_secret: SecretStr
+    # Une session expire après cette inactivité, et au plus tard après sa durée maximale.
+    refresh_token_idle_days: int = Field(default=7, ge=1, le=30)
+    session_max_days: int = Field(default=30, ge=1, le=90)
+
     # requires : les champs ont passé leur validation individuelle.
     # assigns  : rien.
     # ensures  : renvoie la configuration si l'URL est sûre ; sinon lève `ValueError`.
@@ -127,6 +138,25 @@ class Settings(BaseSettings):
             expected_role=APP_DATABASE_ROLE,
             require_tls=self.environment not in _ENVIRONMENTS_WITHOUT_DATABASE_TLS,
         )
+        return self
+
+    # requires : les champs ont passé leur validation individuelle.
+    # assigns  : rien.
+    # ensures  : renvoie la configuration si la clé et les durées de session sont sûres ; sinon
+    #            lève `ValueError`, sans recopier la clé.
+    @model_validator(mode="after")
+    def _check_sessions(self) -> Self:
+        secret = self.jwt_secret.get_secret_value()
+        if len(secret) < MIN_JWT_SECRET_LENGTH:
+            raise ValueError(
+                f"la clé JWT doit contenir au moins {MIN_JWT_SECRET_LENGTH} caractères"
+            )
+        if len(set(secret)) < _MIN_JWT_SECRET_DISTINCT_CHARACTERS:
+            raise ValueError("la clé JWT est trop répétitive pour être aléatoire")
+        if any(marker in secret.lower() for marker in _PLACEHOLDER_MARKERS):
+            raise ValueError("la clé JWT correspond à une valeur d'exemple")
+        if self.refresh_token_idle_days > self.session_max_days:
+            raise ValueError("l'inactivité permise dépasse la durée maximale d'une session")
         return self
 
     # requires : rien.

@@ -5,7 +5,7 @@ TaskHandler est une application web qui permet de **planifier ses tâches** dans
 Ce dépôt couvre pour l'instant uniquement le **backend** : une API REST construite avec FastAPI et
 PostgreSQL. Le frontend sera traité plus tard.
 
-> **État du projet :** socle, base de données et inscription en place. L'avancement réel se lit dans la
+> **État du projet :** socle, base de données, inscription et sessions en place. L'avancement réel se lit dans la
 > [roadmap](docs/roadmap.md). Tout ce qui suit décrit la **cible** du projet.
 
 ---
@@ -104,7 +104,7 @@ Dans chaque module, les responsabilités sont séparées :
 | Table | Colonnes principales | Rôle |
 |---|---|---|
 | `users` | `id`, `email` (unique), `password_hash`, `email_verified_at`, `token_version`, `is_active` | Comptes |
-| `refresh_tokens` | `id`, `user_id`, `family_id`, `token_hash`, `expires_at`, `revoked_at` | Sessions renouvelables |
+| `refresh_tokens` | `id`, `user_id`, `family_id`, `token_hash`, `expires_at`, `session_expires_at`, `revoked_at`, `revocation_reason` | Sessions renouvelables |
 | `one_time_tokens` | `id`, `user_id`, `purpose`, `token_hash`, `expires_at`, `used_at` | Vérification d'e-mail, réinitialisation |
 | `tasks` | `id`, `user_id`, `title`, `description`, `priority` | Tâches |
 | `task_days` | `task_id`, `user_id`, `day`, `start_hour`, `duration_hours`, `status`, `completed_at` — clé primaire (`task_id`, `day`) | Association N-N : placement d'une tâche sur un jour |

@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import secrets
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -32,6 +33,9 @@ LogReader = Callable[[], list[dict[str, object]]]
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 TEST_DATABASE_NAME = "taskhandler_test"
 PROBE_TABLE = "security_probe"
+
+# Clé de signature tirée à chaque exécution : aucun test ne dépend d'une clé connue à l'avance.
+TEST_JWT_SECRET = secrets.token_hex(32)
 
 # Valeur longue et sans mot d'exemple, acceptée par la validation mais reconnue par aucun serveur.
 UNUSED_CREDENTIAL = "k" * 40
@@ -103,13 +107,16 @@ async def isolated_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
 
 # requires : rien.
-# assigns  : retire du processus les variables `TASKHANDLER_*` le temps du test.
-# ensures  : un test ne dépend jamais de la configuration de la machine qui l'exécute.
+# assigns  : retire du processus les variables `TASKHANDLER_*` et fixe la clé JWT de test, le
+#            temps du test.
+# ensures  : un test ne dépend jamais de la configuration de la machine qui l'exécute ; seule la
+#            clé de signature, obligatoire, est fournie (un test peut la retirer).
 @pytest.fixture(autouse=True)
 def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in list(os.environ):
         if name.startswith("TASKHANDLER_"):
             monkeypatch.delenv(name)
+    monkeypatch.setenv("TASKHANDLER_JWT_SECRET", TEST_JWT_SECRET)
 
 
 # requires : rien.
@@ -276,3 +283,42 @@ async def isolated_client(
     async with httpx2.AsyncClient(transport=transport, base_url="http://test") as async_client:
         yield async_client
     database_app.dependency_overrides.clear()
+
+
+REGISTER_URL = "/api/v1/auth/register"
+LOGIN_URL = "/api/v1/auth/login"
+REFRESH_URL = "/api/v1/auth/refresh"
+LOGOUT_URL = "/api/v1/auth/logout"
+LOGOUT_ALL_URL = "/api/v1/auth/logout-all"
+TEST_PASSPHRASE = "violet ruisseau lanterne 2026"
+
+
+# requires : `client` est relié à l'application de test.
+# assigns  : crée un compte.
+# ensures  : renvoie l'identifiant du compte créé ; échoue si l'inscription est refusée.
+async def create_account(
+    client: httpx2.AsyncClient, email: str = "alice@exemple.org", password: str = TEST_PASSPHRASE
+) -> str:
+    response = await client.post(REGISTER_URL, json={"email": email, "password": password})
+    assert response.status_code == 201, response.text
+    account_id: str = response.json()["id"]
+    return account_id
+
+
+# requires : `client` est relié à l'application de test, le compte existe.
+# assigns  : ouvre une session.
+# ensures  : renvoie la paire de jetons ; échoue si la connexion est refusée.
+async def login_tokens(
+    client: httpx2.AsyncClient, email: str = "alice@exemple.org", password: str = TEST_PASSPHRASE
+) -> dict[str, str]:
+    response = await client.post(LOGIN_URL, json={"email": email, "password": password})
+    assert response.status_code == 200, response.text
+    tokens: dict[str, str] = response.json()
+    return tokens
+
+
+# requires : rien.
+# assigns  : rien.
+# ensures  : renvoie l'en-tête d'authentification d'un jeton d'accès.
+def bearer(access_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {access_token}"}

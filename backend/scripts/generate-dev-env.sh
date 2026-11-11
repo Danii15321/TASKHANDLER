@@ -28,6 +28,8 @@ done
 postgres_password="$(openssl rand -hex 32)"
 migrator_password="$(openssl rand -hex 32)"
 app_password="$(openssl rand -hex 32)"
+# Clé de signature des jetons : 256 bits, propre à cette machine.
+jwt_secret="$(openssl rand -hex 32)"
 
 app_url="postgresql+asyncpg://taskhandler_app:${app_password}@${host}"
 migrator_url="postgresql+asyncpg://taskhandler_migrator:${migrator_password}@${host}"
@@ -36,6 +38,7 @@ cat >"${target_dir}/.env" <<EOF
 TASKHANDLER_ENVIRONMENT=development
 TASKHANDLER_LOG_LEVEL=INFO
 TASKHANDLER_DATABASE_URL=${app_url}/taskhandler
+TASKHANDLER_JWT_SECRET=${jwt_secret}
 EOF
 
 cat >"${target_dir}/.env.migration" <<EOF
