@@ -21,25 +21,28 @@ PRIVILEGE_STATE = text(
     "to_regclass('public.users') IS NOT NULL AS users_table, "
     "to_regclass('public.refresh_tokens') IS NOT NULL AS refresh_tokens_table, "
     "to_regclass('public.one_time_tokens') IS NOT NULL AS one_time_tokens_table, "
-    "to_regclass('public.task_days') IS NOT NULL AS task_days_table"
+    "to_regclass('public.task_days') IS NOT NULL AS task_days_table, "
+    "EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'btree_gist') AS btree_gist"
 )
 
 # Droit explicite du rôle applicatif, `PUBLIC` exclu, privilèges par défaut (tables et séquences),
 # version appliquée et présence des tables `users`, `refresh_tokens`, `one_time_tokens` et
-# `task_days` (créée avec `tasks`).
-STATE_AT_HEAD = (1, False, 2, 1, True, True, True, True)
+# `task_days` (créée avec `tasks`), et extension `btree_gist`.
+STATE_AT_HEAD = (1, False, 2, 1, True, True, True, True, True)
 # État initial de PostgreSQL : `PUBLIC` retrouve l'usage du schéma, aucune table ne subsiste.
-STATE_AT_BASE = (0, True, 0, 0, False, False, False, False)
+STATE_AT_BASE = (0, True, 0, 0, False, False, False, False, False)
 
 
 # requires : `database_url` vise la base de test et le schéma contient `alembic_version`.
 # assigns  : rien (lecture seule).
 # ensures  : renvoie les droits accordés par les migrations et le nombre de versions appliquées.
-def read_migration_state(database_url: str) -> tuple[int, bool, int, int, bool, bool, bool, bool]:
+def read_migration_state(
+    database_url: str,
+) -> tuple[int, bool, int, int, bool, bool, bool, bool, bool]:
     # requires : aucune boucle d'événements n'est en cours dans ce fil d'exécution.
     # assigns  : ouvre puis ferme une connexion.
     # ensures  : renvoie l'état lu dans PostgreSQL.
-    async def read() -> tuple[int, bool, int, int, bool, bool, bool, bool]:
+    async def read() -> tuple[int, bool, int, int, bool, bool, bool, bool, bool]:
         engine = create_async_engine(database_url, poolclass=NullPool)
         try:
             async with engine.connect() as connection:
@@ -55,6 +58,7 @@ def read_migration_state(database_url: str) -> tuple[int, bool, int, int, bool, 
             bool(state.refresh_tokens_table),
             bool(state.one_time_tokens_table),
             bool(state.task_days_table),
+            bool(state.btree_gist),
         )
 
     return asyncio.run(read())

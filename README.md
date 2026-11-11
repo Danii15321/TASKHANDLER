@@ -5,7 +5,7 @@ TaskHandler est une application web qui permet de **planifier ses tâches** dans
 Ce dépôt couvre pour l'instant uniquement le **backend** : une API REST construite avec FastAPI et
 PostgreSQL. Le frontend sera traité plus tard.
 
-> **État du projet :** comptes, sessions, anti-abus, e-mails et tâches en place ; grille à venir. L'avancement réel se lit dans la
+> **État du projet :** comptes, sessions, anti-abus, tâches et grille en place ; durcissement à venir. L'avancement réel se lit dans la
 > [roadmap](docs/roadmap.md). Tout ce qui suit décrit la **cible** du projet.
 
 ---
@@ -130,7 +130,7 @@ contraire.
 | Session | `POST /auth/logout`, `POST /auth/logout-all` |
 | Compte | `GET`, `DELETE /users/me`, `POST /users/me/password`, `GET /users/me/export` |
 | Tâches | `GET`, `POST /tasks`, `GET`, `PATCH`, `DELETE /tasks/{id}` |
-| Grille | `GET /planning?start=…&end=…` (sans description), `PUT`, `DELETE /tasks/{id}/days/{day}` |
+| Grille | `GET /planning?start=…&end=…` (sans description), `PUT`, `PATCH`, `DELETE /tasks/{id}/days/{day}` |
 
 Les erreurs suivent le format `application/problem+json` (RFC 9457).
 

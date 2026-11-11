@@ -32,8 +32,17 @@ ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
     ("PUT", f"{TASKS_URL}/{{id}}/days/2026-11-16", {"start_hour": 3, "duration_hours": 1}),
     ("PUT", f"{TASKS_URL}/{{id}}/days/2026-11-25", {"start_hour": 3, "duration_hours": 1}),
     ("DELETE", f"{TASKS_URL}/{{id}}/days/2026-11-16", None),
+    ("PATCH", f"{TASKS_URL}/{{id}}/days/2026-11-16", {"status": "done"}),
 ]
-ROUTE_IDS = ["lire", "modifier", "supprimer", "remplacer-jour", "ajouter-jour", "retirer-jour"]
+ROUTE_IDS = [
+    "lire",
+    "modifier",
+    "supprimer",
+    "remplacer-jour",
+    "ajouter-jour",
+    "retirer-jour",
+    "statut-jour",
+]
 VALID_TASK = {
     "title": "Tâche d'Alice",
     "description": "Description privée d'Alice",
@@ -130,13 +139,23 @@ async def test_route_requires_valid_token(
     assert unchanged.json() == task
 
 
-# requires : PostgreSQL et Redis sont démarrés.
-# assigns  : crée une tâche sans jeton, dans une transaction annulée à la fin du test.
-# ensures  : la création exige elle aussi un jeton valide.
-async def test_create_requires_valid_token(isolated_client: OutboxClient) -> None:
-    response = await isolated_client.post(TASKS_URL, json=VALID_TASK)
-
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
+# requires : `method` et `url` désignent une route qui ne vise pas une tâche existante.
+# assigns  : rien (la demande est refusée avant tout accès).
+# ensures  : la création, la liste et la grille exigent elles aussi un jeton valide.
+@pytest.mark.parametrize(
+    ("method", "url", "body"),
+    [
+        ("POST", TASKS_URL, VALID_TASK),
+        ("GET", TASKS_URL, None),
+        ("GET", "/api/v1/planning?start=2026-11-16&end=2026-11-22", None),
+    ],
+    ids=["creer", "lister", "grille"],
+)
+async def test_collection_routes_require_valid_token(
+    isolated_client: OutboxClient, method: str, url: str, body: dict[str, Any] | None
+) -> None:
+    for headers in [{}, bearer("pas-un-jeton")]:
+        assert await call(isolated_client, method, url, body, headers) == HTTPStatus.UNAUTHORIZED
 
 
 # requires : `extra` est un champ que le client ne doit jamais pouvoir fixer.
@@ -149,7 +168,7 @@ async def test_create_requires_valid_token(isolated_client: OutboxClient) -> Non
         {"user_id": "00000000-0000-0000-0000-000000000001"},
         {"id": "00000000-0000-0000-0000-000000000001"},
         {"created_at": "2026-01-01T00:00:00Z"},
-        {"priority": "high"},
+        {"completed_at": "2026-01-01T00:00:00Z"},
     ],
 )
 async def test_injected_fields_are_refused(

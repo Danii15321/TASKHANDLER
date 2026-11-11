@@ -1,15 +1,28 @@
-"""Règles métier des tâches. `user_id` vient toujours du jeton, jamais de la requête."""
+"""Règles métier des tâches et de la grille. `user_id` vient toujours du jeton."""
 
 import uuid
 from dataclasses import dataclass
 from datetime import date
 
+from sqlalchemy import Row
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.tasks import repository
-from app.modules.tasks.models import Task, TaskDay
+from app.modules.tasks.models import NO_OVERLAP_CONSTRAINT, Task, TaskDay
+from app.modules.tasks.pagination import decode_cursor, encode_cursor
 from app.modules.tasks.repository import DayPlacement
-from app.modules.tasks.schemas import TaskCreate, TaskDaySlot, TaskUpdate
+from app.modules.tasks.schemas import (
+    PlanningQuery,
+    TaskCreate,
+    TaskDaySlot,
+    TaskListQuery,
+    TaskUpdate,
+)
+
+# Au-delà, la grille est refusée : elle doit rester légère, quel que soit le nombre de jours
+# annulés accumulés sur la période (ceux-là peuvent se superposer sans limite).
+MAX_PLANNING_ENTRIES = 1000
 
 
 class TaskNotFoundError(Exception):
@@ -20,12 +33,36 @@ class LastDayError(Exception):
     """Retirer ce jour laisserait la tâche sans aucun jour."""
 
 
+class SlotConflictError(Exception):
+    """Le créneau chevauche celui d'une autre tâche non annulée du même utilisateur."""
+
+
+class PlanningTooLargeError(Exception):
+    """La période demandée contient trop de cases pour une seule réponse."""
+
+
 @dataclass(frozen=True)
 class TaskView:
     """Tâche et ses jours, lus pour leur propriétaire."""
 
     task: Task
     days: list[TaskDay]
+
+
+@dataclass(frozen=True)
+class TaskPageView:
+    """Une page de tâches et le curseur de la suivante, ou `None` sur la dernière."""
+
+    tasks: list[Task]
+    next_cursor: str | None
+
+
+# requires : `error` provient d'une écriture dans `task_days`.
+# assigns  : rien.
+# ensures  : renvoie `True` seulement si l'erreur vient de l'interdiction des chevauchements.
+def _is_overlap(error: IntegrityError) -> bool:
+    driver_error = error.orig.__cause__ if error.orig is not None else None
+    return getattr(driver_error, "constraint_name", None) == NO_OVERLAP_CONSTRAINT
 
 
 # requires : `user_id` vient du jeton d'accès.
@@ -42,19 +79,31 @@ async def _load(session: AsyncSession, *, user_id: uuid.UUID, task_id: uuid.UUID
 
 # requires : `user_id` vient du jeton d'accès, `data` est validé (1 à 31 jours distincts).
 # assigns  : insère la tâche et ses jours, puis valide la transaction.
-# ensures  : renvoie la tâche créée et ses jours.
+# ensures  : renvoie la tâche créée et ses jours ; lève `SlotConflictError` sans rien créer si un
+#            jour chevauche une autre tâche.
 async def create_task(session: AsyncSession, *, user_id: uuid.UUID, data: TaskCreate) -> TaskView:
-    task = await repository.insert_task(
-        session, user_id=user_id, title=data.title, description=data.description
-    )
-    await repository.insert_task_days(
-        session,
-        user_id=user_id,
-        task_id=task.id,
-        placements=[
-            DayPlacement(entry.day, entry.start_hour, entry.duration_hours) for entry in data.days
-        ],
-    )
+    try:
+        task = await repository.insert_task(
+            session,
+            user_id=user_id,
+            title=data.title,
+            description=data.description,
+            priority=data.priority,
+        )
+        await repository.insert_task_days(
+            session,
+            user_id=user_id,
+            task_id=task.id,
+            placements=[
+                DayPlacement(entry.day, entry.start_hour, entry.duration_hours)
+                for entry in data.days
+            ],
+        )
+    except IntegrityError as error:
+        await session.rollback()
+        if _is_overlap(error):
+            raise SlotConflictError from None
+        raise
     view = await _load(session, user_id=user_id, task_id=task.id)
     await session.commit()
     return view
@@ -67,6 +116,22 @@ async def read_task(session: AsyncSession, *, user_id: uuid.UUID, task_id: uuid.
     return await _load(session, user_id=user_id, task_id=task_id)
 
 
+# requires : `user_id` vient du jeton d'accès, `query` est validé.
+# assigns  : rien (lecture seule).
+# ensures  : renvoie une page de tâches de `user_id`, et le curseur de la suivante. Une ligne de
+#            plus que la page est lue, pour savoir sans seconde requête s'il reste des tâches.
+async def list_tasks(
+    session: AsyncSession, *, user_id: uuid.UUID, query: TaskListQuery
+) -> TaskPageView:
+    after = decode_cursor(query.cursor) if query.cursor is not None else None
+    tasks = await repository.list_tasks(
+        session, user_id=user_id, limit=query.limit + 1, after=after
+    )
+    page, has_more = tasks[: query.limit], len(tasks) > query.limit
+    next_cursor = encode_cursor(page[-1].created_at, page[-1].id) if has_more else None
+    return TaskPageView(tasks=page, next_cursor=next_cursor)
+
+
 # requires : `user_id` vient du jeton d'accès, `data` modifie au moins un champ.
 # assigns  : modifie la tâche, puis valide la transaction.
 # ensures  : renvoie la tâche modifiée ; lève `TaskNotFoundError` sans rien modifier sinon.
@@ -76,7 +141,7 @@ async def update_task(
     # Liste blanche : seuls ces champs, et seulement s'ils ont été envoyés, sont modifiés.
     changes: dict[str, str] = {
         name: value
-        for name in ("title", "description")
+        for name in ("title", "description", "priority")
         if name in data.model_fields_set and isinstance(value := getattr(data, name), str)
     }
     task = await repository.update_task(session, user_id=user_id, task_id=task_id, changes=changes)
@@ -97,9 +162,10 @@ async def delete_task(session: AsyncSession, *, user_id: uuid.UUID, task_id: uui
 
 
 # requires : `user_id` vient du jeton d'accès, `slot` est validé.
-# assigns  : crée ou remplace le jour de la tâche, puis valide la transaction.
-# ensures  : renvoie le jour enregistré ; lève `TaskNotFoundError` sans rien écrire si la tâche
-#            n'appartient pas à `user_id`.
+# assigns  : crée ou remplace le créneau de la tâche pour ce jour, puis valide la transaction.
+# ensures  : renvoie le jour enregistré (un jour existant garde son statut) ; lève
+#            `TaskNotFoundError` si la tâche n'appartient pas à `user_id`, ou `SlotConflictError`
+#            si le créneau en chevauche un autre ; dans les deux cas, rien n'est écrit.
 async def put_task_day(
     session: AsyncSession,
     *,
@@ -108,12 +174,46 @@ async def put_task_day(
     day: date,
     slot: TaskDaySlot,
 ) -> TaskDay:
-    task_day = await repository.upsert_task_day(
-        session,
-        user_id=user_id,
-        task_id=task_id,
-        placement=DayPlacement(day, slot.start_hour, slot.duration_hours),
-    )
+    try:
+        task_day = await repository.upsert_task_day(
+            session,
+            user_id=user_id,
+            task_id=task_id,
+            placement=DayPlacement(day, slot.start_hour, slot.duration_hours),
+        )
+    except IntegrityError as error:
+        await session.rollback()
+        if _is_overlap(error):
+            raise SlotConflictError from None
+        raise
+    if task_day is None:
+        raise TaskNotFoundError
+    await session.commit()
+    return task_day
+
+
+# requires : `user_id` vient du jeton d'accès, `status` est un statut connu.
+# assigns  : change le statut du jour et `completed_at`, puis valide la transaction.
+# ensures  : renvoie le jour modifié ; lève `TaskNotFoundError` si le jour n'existe pas pour
+#            `user_id`, ou `SlotConflictError` si réactiver un jour annulé chevaucherait une autre
+#            tâche entre-temps placée sur son créneau.
+async def set_task_day_status(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    task_id: uuid.UUID,
+    day: date,
+    status: str,
+) -> TaskDay:
+    try:
+        task_day = await repository.update_task_day_status(
+            session, user_id=user_id, task_id=task_id, day=day, status=status
+        )
+    except IntegrityError as error:
+        await session.rollback()
+        if _is_overlap(error):
+            raise SlotConflictError from None
+        raise
     if task_day is None:
         raise TaskNotFoundError
     await session.commit()
@@ -138,3 +238,24 @@ async def remove_task_day(
         await session.rollback()
         raise LastDayError
     await session.commit()
+
+
+# requires : `user_id` vient du jeton d'accès, `query` est validé (31 jours au plus).
+# assigns  : rien (lecture seule).
+# ensures  : renvoie les cases de la grille de `user_id` ; lève `PlanningTooLargeError` au-delà de
+#            `MAX_PLANNING_ENTRIES` cases, plutôt que de renvoyer une réponse démesurée.
+async def read_planning(
+    session: AsyncSession, *, user_id: uuid.UUID, query: PlanningQuery
+) -> list[Row[uuid.UUID, str, str, date, int, int, str]]:
+    entries = await repository.planning_entries(
+        session,
+        user_id=user_id,
+        start=query.start,
+        end=query.end,
+        statuses=list(query.status),
+        priorities=list(query.priority),
+        limit=MAX_PLANNING_ENTRIES + 1,
+    )
+    if len(entries) > MAX_PLANNING_ENTRIES:
+        raise PlanningTooLargeError
+    return entries

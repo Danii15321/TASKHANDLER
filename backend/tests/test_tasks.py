@@ -14,8 +14,9 @@ from tests.conftest import OutboxClient, bearer, create_account, login_tokens
 pytestmark = pytest.mark.anyio
 
 TASKS_URL = "/api/v1/tasks"
-TASK_FIELDS = {"id", "title", "description", "days", "created_at", "updated_at"}
-DAY_FIELDS = {"day", "start_hour", "duration_hours"}
+TASK_FIELDS = {"id", "title", "description", "priority", "days", "created_at", "updated_at"}
+DAY_FIELDS = {"day", "start_hour", "duration_hours", "status", "completed_at"}
+NEW_DAY = {"status": "todo", "completed_at": None}
 
 
 # requires : `client` est relié à l'application de test.
@@ -74,9 +75,10 @@ async def test_create_task(isolated_client: OutboxClient, alice: dict[str, str])
     assert set(task) == TASK_FIELDS
     assert task["title"] == "Réviser le cours"
     assert task["description"] == "Chapitres 3 et 4,\navec les exercices."
+    assert task["priority"] == "medium"
     assert task["days"] == [
-        {"day": "2026-11-16", "start_hour": 14, "duration_hours": 1},
-        {"day": "2026-11-17", "start_hour": 9, "duration_hours": 2},
+        {"day": "2026-11-16", "start_hour": 14, "duration_hours": 1, **NEW_DAY},
+        {"day": "2026-11-17", "start_hour": 9, "duration_hours": 2, **NEW_DAY},
     ]
 
 
@@ -212,11 +214,16 @@ async def test_put_task_day(isolated_client: OutboxClient, alice: dict[str, str]
     )
 
     assert added.status_code == HTTPStatus.OK
-    assert added.json() == {"day": "2026-11-20", "start_hour": 18, "duration_hours": 2}
+    assert added.json() == {"day": "2026-11-20", "start_hour": 18, "duration_hours": 2, **NEW_DAY}
     assert set(replaced.json()) == DAY_FIELDS
     current = (await isolated_client.get(f"{TASKS_URL}/{task['id']}", headers=alice)).json()
     assert [entry["day"] for entry in current["days"]] == ["2026-11-16", "2026-11-17", "2026-11-20"]
-    assert current["days"][0] == {"day": "2026-11-16", "start_hour": 7, "duration_hours": 3}
+    assert current["days"][0] == {
+        "day": "2026-11-16",
+        "start_hour": 7,
+        "duration_hours": 3,
+        **NEW_DAY,
+    }
     for day, body in [
         ("2026-11-21", {"start_hour": 22, "duration_hours": 3}),
         ("2026-11-21", {"start_hour": 8}),

@@ -25,8 +25,8 @@ phase, pas avant.
 | 5 | Authentification et sessions | Terminée |
 | 6 | Protection contre les abus | Terminée |
 | 7 | Vérification d'e-mail et réinitialisation | Terminée |
-| 8 | Tâches | En relecture |
-| 9 | Grille hebdomadaire | À faire |
+| 8 | Tâches | Terminée |
+| 9 | Grille hebdomadaire | En relecture |
 | 10 | Durcissement, RGPD et audit | À faire |
 | 11 | Conteneurisation et déploiement | À faire |
 
@@ -197,20 +197,20 @@ adresse connue d'une adresse inconnue.
 
 **Objectif :** un CRUD complet où un utilisateur ne peut jamais atteindre les données d'un autre.
 
-- [ ] Rédiger `docs/steps/step-8.md`
-- [ ] Créer la table `tasks`, avec titre et description obligatoires et contraintes `CHECK`
-- [ ] Créer la table d'association N-N `task_days` : `task_id`, `user_id`, `day`, `start_hour`, `duration_hours`
-- [ ] Garantir par clé étrangère composite (`task_id`, `user_id`) qu'un jour appartient au propriétaire de la tâche
-- [ ] Garantir en base qu'une tâche tient dans la journée : début de 0 à 23, durée d'au moins 1, fin à 24 au plus
-- [ ] Définir les schémas : titre de 1 à 200 caractères, description de 1 à 5 000
-- [ ] Rejeter les champs vides, inconnus et les caractères de contrôle, dont l'octet NUL
-- [ ] Filtrer systématiquement chaque requête par propriétaire dans le dépôt
-- [ ] Implémenter création, lecture, modification partielle et suppression
-- [ ] Exiger au moins un jour à la création, et 31 jours au plus par requête
-- [ ] Implémenter `PUT` et `DELETE /tasks/{id}/days/{day}`
-- [ ] Refuser le retrait du dernier jour d'une tâche, sous verrou de ligne
-- [ ] Répondre `404` pour la ressource d'un autre utilisateur
-- [ ] Tester l'isolation entre utilisateurs sur chaque route
+- [x] Rédiger `docs/steps/step-8.md`
+- [x] Créer la table `tasks`, avec titre et description obligatoires et contraintes `CHECK`
+- [x] Créer la table d'association N-N `task_days` : `task_id`, `user_id`, `day`, `start_hour`, `duration_hours`
+- [x] Garantir par clé étrangère composite (`task_id`, `user_id`) qu'un jour appartient au propriétaire de la tâche
+- [x] Garantir en base qu'une tâche tient dans la journée : début de 0 à 23, durée d'au moins 1, fin à 24 au plus
+- [x] Définir les schémas : titre de 1 à 200 caractères, description de 1 à 5 000
+- [x] Rejeter les champs vides, inconnus et les caractères de contrôle, dont l'octet NUL
+- [x] Filtrer systématiquement chaque requête par propriétaire dans le dépôt
+- [x] Implémenter création, lecture, modification partielle et suppression
+- [x] Exiger au moins un jour à la création, et 31 jours au plus par requête
+- [x] Implémenter `PUT` et `DELETE /tasks/{id}/days/{day}`
+- [x] Refuser le retrait du dernier jour d'une tâche, sous verrou de ligne
+- [x] Répondre `404` pour la ressource d'un autre utilisateur
+- [x] Tester l'isolation entre utilisateurs sur chaque route
 
 **Terminé lorsque :** chaque route a un test prouvant qu'un second utilisateur reçoit `404`.
 

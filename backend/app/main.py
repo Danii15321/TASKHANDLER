@@ -21,6 +21,7 @@ from app.db.session import create_database_engine, create_session_factory
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.router import session_router
 from app.modules.health.router import router as health_router
+from app.modules.tasks.router import planning_router
 from app.modules.tasks.router import router as tasks_router
 
 
@@ -88,5 +89,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api_v1.include_router(auth_router)
     api_v1.include_router(session_router)
     api_v1.include_router(tasks_router)
+    api_v1.include_router(planning_router)
     app.include_router(api_v1)
     return app
