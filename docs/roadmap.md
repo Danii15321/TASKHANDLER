@@ -24,8 +24,8 @@ phase, pas avant.
 | 4 | Comptes et mots de passe | Terminée |
 | 5 | Authentification et sessions | Terminée |
 | 6 | Protection contre les abus | Terminée |
-| 7 | Vérification d'e-mail et réinitialisation | En relecture |
-| 8 | Tâches | À faire |
+| 7 | Vérification d'e-mail et réinitialisation | Terminée |
+| 8 | Tâches | En relecture |
 | 9 | Grille hebdomadaire | À faire |
 | 10 | Durcissement, RGPD et audit | À faire |
 | 11 | Conteneurisation et déploiement | À faire |
@@ -178,15 +178,15 @@ légitime.
 
 **Objectif :** des parcours de compte qui ne révèlent pas quelles adresses sont inscrites.
 
-- [ ] Rédiger `docs/steps/step-7.md`
-- [ ] Créer une interface d'envoi d'e-mails, avec Mailpit en développement
-- [ ] Créer la table `one_time_tokens`, avec jetons hachés, expirants et à usage unique
-- [ ] Rendre `POST /auth/register` uniforme (`202`), que l'adresse existe ou non
-- [ ] Implémenter `POST /auth/verify-email`
-- [ ] Refuser la connexion tant que l'adresse n'est pas vérifiée
-- [ ] Implémenter `POST /auth/password/forgot` avec réponse uniforme
-- [ ] Implémenter `POST /auth/password/reset`, qui révoque toutes les sessions
-- [ ] Tester l'expiration, la réutilisation et l'uniformité des réponses
+- [x] Rédiger `docs/steps/step-7.md`
+- [x] Créer une interface d'envoi d'e-mails, avec Mailpit en développement
+- [x] Créer la table `one_time_tokens`, avec jetons hachés, expirants et à usage unique
+- [x] Rendre `POST /auth/register` uniforme (`202`), que l'adresse existe ou non
+- [x] Implémenter `POST /auth/verify-email`
+- [x] Refuser la connexion tant que l'adresse n'est pas vérifiée
+- [x] Implémenter `POST /auth/password/forgot` avec réponse uniforme
+- [x] Implémenter `POST /auth/password/reset`, qui révoque toutes les sessions
+- [x] Tester l'expiration, la réutilisation et l'uniformité des réponses
 
 **Terminé lorsque :** les réponses et les temps de traitement ne permettent pas de distinguer une
 adresse connue d'une adresse inconnue.
