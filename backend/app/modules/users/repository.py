@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.users.models import User
@@ -70,3 +70,16 @@ async def mark_email_verified(session: AsyncSession, *, user_id: uuid.UUID) -> N
         .values(email_verified_at=func.now())
         .execution_options(synchronize_session=False)
     )
+
+
+# requires : `user_id` vient d'un jeton d'accès vérifié, après réauthentification.
+# assigns  : supprime le compte et, en cascade, ses sessions, liens, tâches et jours.
+# ensures  : renvoie `True` si le compte existait ; rien ne subsiste de lui en base.
+async def delete_user(session: AsyncSession, *, user_id: uuid.UUID) -> bool:
+    statement = (
+        delete(User)
+        .where(User.id == user_id)
+        .returning(User.id)
+        .execution_options(synchronize_session=False)
+    )
+    return (await session.execute(statement)).scalar_one_or_none() is not None

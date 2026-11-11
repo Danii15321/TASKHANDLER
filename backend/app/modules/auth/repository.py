@@ -165,3 +165,16 @@ async def consume_one_time_token(
         .execution_options(synchronize_session=False)
     )
     return (await session.execute(statement)).scalar_one_or_none()
+
+
+# requires : `user_id` vient d'un jeton d'accès vérifié.
+# assigns  : rien (lecture seule).
+# ensures  : renvoie les jetons de session de `user_id`, du plus ancien au plus récent ; l'appelant
+#            n'en expose que les dates, jamais l'empreinte.
+async def list_user_sessions(session: AsyncSession, *, user_id: uuid.UUID) -> list[RefreshToken]:
+    statement = (
+        select(RefreshToken)
+        .where(RefreshToken.user_id == user_id)
+        .order_by(RefreshToken.created_at, RefreshToken.id)
+    )
+    return list((await session.execute(statement)).scalars())

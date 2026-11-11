@@ -28,6 +28,7 @@ REASON_LOGOUT = "logout"
 REASON_LOGOUT_ALL = "logout_all"
 REASON_REUSE_DETECTED = "reuse_detected"
 REASON_PASSWORD_RESET = "password_reset"  # noqa: S105 — nom de raison, pas un secret
+REASON_PASSWORD_CHANGE = "password_change"  # noqa: S105 — nom de raison, pas un secret
 
 # Usages des jetons à usage unique : un jeton de vérification ne peut pas réinitialiser un mot de
 # passe, et inversement.
@@ -67,7 +68,8 @@ class RefreshToken(Base):
         ),
         CheckConstraint(
             "revocation_reason IN "
-            "('rotated', 'logout', 'logout_all', 'reuse_detected', 'password_reset')",
+            "('rotated', 'logout', 'logout_all', 'reuse_detected', 'password_reset', "
+            "'password_change')",
             name="revocation_reason_known",
         ),
     )

@@ -1,5 +1,6 @@
 """Configuration de l'application, validée une seule fois au démarrage."""
 
+import re
 from pathlib import Path
 from typing import Literal, Self
 from urllib.parse import unquote, urlsplit
@@ -29,6 +30,10 @@ _ENVIRONMENTS_WITHOUT_DATABASE_TLS: frozenset[Environment] = frozenset({"develop
 # migration ou avec un superutilisateur, qui annuleraient le moindre privilège.
 APP_DATABASE_ROLE = "taskhandler_app"
 MIGRATION_DATABASE_ROLE = "taskhandler_migrator"
+# Un nom d'hôte, éventuellement précédé de `*.` pour ses sous-domaines ; jamais `*` seul.
+_ALLOWED_HOST = re.compile(
+    r"(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9-]{1,63})*"
+)
 # Utilisateur Redis imposé : c'est le seul dont les droits ACL sont restreints au limiteur.
 REDIS_USER = "taskhandler_app"
 
@@ -171,6 +176,20 @@ class Settings(BaseSettings):
     # Taille maximale d'un corps de requête, 1 Mio par défaut (OWASP API4).
     max_request_body_bytes: int = Field(default=1_048_576, ge=1024, le=10_485_760)
 
+    # Hôtes acceptés dans l'en-tête `Host` (`TrustedHostMiddleware`) : un en-tête forgé ne doit pas
+    # produire de liens ou de redirections vers un autre domaine. `*` est refusé.
+    allowed_hosts: tuple[str, ...] = Field(
+        default=("localhost", "127.0.0.1"), min_length=1, max_length=20
+    )
+    # Origines autorisées à appeler l'API depuis un navigateur. Vide : CORS reste fermé, ce qui est
+    # le cas tant qu'il n'existe pas de frontend.
+    cors_allowed_origins: tuple[AnyHttpUrl, ...] = Field(default=(), max_length=20)
+
+    # Durées de conservation (RGPD, minimisation), appliquées par `python -m app.maintenance`.
+    retention_session_days: int = Field(default=30, ge=1, le=365)
+    retention_one_time_token_days: int = Field(default=7, ge=1, le=365)
+    retention_unverified_account_days: int = Field(default=7, ge=1, le=90)
+
     # Limites par fenêtre glissante, bornées pour qu'une erreur de réglage ne les supprime pas.
     login_ip_limit_per_minute: int = Field(default=20, ge=1, le=1000)
     login_account_limit_per_minute: int = Field(default=5, ge=1, le=100)
@@ -252,6 +271,33 @@ class Settings(BaseSettings):
             if self.frontend_base_url.scheme != "https":
                 raise ValueError("les liens doivent être en HTTPS dans cet environnement")
         return self
+
+    # requires : les champs ont passé leur validation individuelle.
+    # assigns  : rien.
+    # ensures  : renvoie la configuration si les hôtes et origines sont explicites ; sinon lève
+    #            `ValueError`. Hors développement, chaque origine doit être en HTTPS.
+    @model_validator(mode="after")
+    def _check_http_exposure(self) -> Self:
+        for host in self.allowed_hosts:
+            if not _ALLOWED_HOST.fullmatch(host):
+                raise ValueError("hôte autorisé invalide, ou `*` (refusé)")
+        for origin in self.cors_allowed_origins:
+            if origin.path not in (None, "", "/") or origin.query or origin.fragment:
+                raise ValueError("une origine CORS ne contient ni chemin, ni requête, ni fragment")
+            if (
+                self.environment not in _ENVIRONMENTS_WITHOUT_DATABASE_TLS
+                and origin.scheme != "https"
+            ):
+                raise ValueError("les origines CORS doivent être en HTTPS dans cet environnement")
+        return self
+
+    # requires : rien.
+    # assigns  : rien (lecture seule).
+    # ensures  : renvoie les origines CORS sous la forme exacte envoyée par les navigateurs
+    #            (`https://hote[:port]`, sans barre finale).
+    @property
+    def cors_origins(self) -> list[str]:
+        return [str(origin).rstrip("/") for origin in self.cors_allowed_origins]
 
     # requires : rien.
     # assigns  : rien (lecture seule).

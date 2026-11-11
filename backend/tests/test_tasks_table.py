@@ -13,6 +13,7 @@ from app.modules.tasks.models import (
     LAST_ALLOWED_DAY,
     TITLE_MAX_LENGTH,
 )
+from tests.conftest import act_as
 
 pytestmark = pytest.mark.anyio
 
@@ -29,7 +30,8 @@ INSERT_DAY = text(
 
 
 # requires : `session` est une session isolée, `email` une adresse libre.
-# assigns  : insère un compte dans une transaction annulée à la fin du test.
+# assigns  : insère un compte dans une transaction annulée à la fin du test, et le déclare comme
+#            utilisateur courant pour la RLS.
 # ensures  : renvoie l'identifiant du compte créé.
 async def insert_account(session: AsyncSession, email: str) -> str:
     account_id: str = (
@@ -38,6 +40,8 @@ async def insert_account(session: AsyncSession, email: str) -> str:
             {"email": email, "hash": VALID_HASH},
         )
     ).scalar_one()
+    # Le dernier compte créé devient l'utilisateur courant, comme après une connexion.
+    await act_as(session, account_id)
     return account_id
 
 
@@ -128,7 +132,11 @@ async def test_database_rejects_invalid_days(
 async def test_day_cannot_mix_owners(db_session: AsyncSession) -> None:
     alice = await insert_account(db_session, "alice@exemple.org")
     bob = await insert_account(db_session, "bob@exemple.org")
+    await act_as(db_session, alice)
     alice_task = await insert_task(db_session, alice)
+    # Bob tente de rattacher un jour à la tâche d'Alice : la RLS laisse passer sa propre ligne,
+    # c'est la clé étrangère composite qui doit refuser le mélange des propriétaires.
+    await act_as(db_session, bob)
     values = {
         "task_id": alice_task,
         "user_id": bob,

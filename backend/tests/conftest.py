@@ -224,6 +224,8 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "TASKHANDLER_SMTP_PASSWORD": UNUSED_CREDENTIAL,
         "TASKHANDLER_EMAIL_FROM": "ne-pas-repondre@taskhandler.fr",
         "TASKHANDLER_FRONTEND_BASE_URL": "https://app.taskhandler.fr",
+        # Hôtes des clients de test : `test` (httpx2) et `testserver` (TestClient).
+        "TASKHANDLER_ALLOWED_HOSTS": '["test", "testserver", "localhost", "127.0.0.1"]',
     }.items():
         monkeypatch.setenv(name, value)
 
@@ -463,3 +465,13 @@ async def login_tokens(
 # ensures  : renvoie l'en-tête d'authentification d'un jeton d'accès.
 def bearer(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
+
+
+# requires : `session` est une session isolée, `user_id` un compte existant.
+# assigns  : déclare `user_id` à PostgreSQL pour la transaction en cours (RLS des tâches).
+# ensures  : les requêtes suivantes sur `tasks` et `task_days` agissent au nom de ce compte, comme
+#            après `get_current_user` dans l'application.
+async def act_as(session: AsyncSession, user_id: str) -> None:
+    await session.execute(
+        text("SELECT set_config('app.current_user_id', :user_id, true)"), {"user_id": str(user_id)}
+    )

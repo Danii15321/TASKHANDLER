@@ -16,7 +16,7 @@ from app.core.rate_limit import (
     RateLimitUnavailableError,
 )
 from app.core.tokens import InvalidAccessTokenError, decode_access_token
-from app.db.session import SessionDependency
+from app.db.session import SessionDependency, bind_rls_user
 from app.modules.auth.limits import authenticated_user_limit, too_many_requests
 from app.modules.auth.repository import get_authenticated_user
 from app.modules.users.models import User
@@ -49,9 +49,10 @@ def _unauthenticated() -> HTTPException:
 
 
 # requires : la requête porte, ou non, un en-tête `Authorization: Bearer <jeton>`.
-# assigns  : rien (lecture seule).
+# assigns  : lie la session de la requête à l'utilisateur, pour la RLS des tâches.
 # ensures  : renvoie l'utilisateur, rechargé en base à chaque requête : actif, avec la bonne
-#            version de jeton et une session encore ouverte. Sinon lève une erreur 401.
+#            version de jeton et une session encore ouverte, et déclaré à la RLS des tâches.
+#            Sinon lève une erreur 401.
 async def get_current_user(
     settings: SettingsDependency,
     session: SessionDependency,
@@ -71,6 +72,9 @@ async def get_current_user(
     )
     if user is None:
         raise _unauthenticated()
+    # Second filtre, appliqué par PostgreSQL lui-même : la RLS des tâches ne montrera que les
+    # lignes de cet utilisateur pendant toute la requête.
+    await bind_rls_user(session, user.id)
     return CurrentUser(user=user, session_id=claims.sid)
 
 

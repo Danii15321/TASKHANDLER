@@ -1,16 +1,19 @@
 """Moteur asynchrone, fabrique de sessions et session propre à chaque requête."""
 
+import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Annotated
 
 from fastapi import Depends, Request
+from sqlalchemy import Connection, event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.orm import Session, SessionTransaction
 
 from app.core.config import Settings
 
@@ -99,3 +102,33 @@ def get_session_factory(request: Request) -> SessionFactory:
 
 
 SessionFactoryDependency = Annotated[SessionFactory, Depends(get_session_factory)]
+
+
+# Réglage lu par les politiques RLS de `tasks` et `task_days` (migration 0007).
+_RLS_USER_KEY = "rls_user_id"
+_SET_RLS_USER = text("SELECT set_config('app.current_user_id', :user_id, true)")
+
+
+# requires : appelée par SQLAlchemy au début de chaque transaction d'une session.
+# assigns  : déclare à PostgreSQL l'utilisateur de la session, pour cette transaction seulement.
+# ensures  : si la session a été liée à un utilisateur, la RLS filtre chaque requête sur lui, y
+#            compris après un `commit`, qui ouvre une nouvelle transaction. `true` (local) : le
+#            réglage disparaît à la fin de la transaction et ne fuit jamais vers la requête
+#            suivante qui réutiliserait la même connexion du pool.
+@event.listens_for(Session, "after_begin")
+def _declare_rls_user(
+    session: Session, _transaction: SessionTransaction, connection: Connection
+) -> None:
+    user_id = session.info.get(_RLS_USER_KEY)
+    if isinstance(user_id, str):
+        connection.execute(_SET_RLS_USER, {"user_id": user_id})
+
+
+# requires : `user_id` vient d'un jeton d'accès vérifié.
+# assigns  : lie la session à l'utilisateur et le déclare à PostgreSQL pour la transaction en cours.
+# ensures  : toutes les requêtes suivantes de la session, dans cette transaction et les suivantes,
+#            ne voient que les tâches de `user_id` : un oubli de `WHERE user_id` dans le dépôt
+#            serait rattrapé par la base.
+async def bind_rls_user(session: AsyncSession, user_id: uuid.UUID) -> None:
+    session.info[_RLS_USER_KEY] = str(user_id)
+    await session.execute(_SET_RLS_USER, {"user_id": str(user_id)})

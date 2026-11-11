@@ -286,3 +286,18 @@ async def planning_entries(
     if priorities:
         statement = statement.where(Task.priority.in_(priorities))
     return list((await session.execute(statement)).all())
+
+
+# requires : `user_id` vient d'un jeton d'accès vérifié.
+# assigns  : rien (lecture seule).
+# ensures  : renvoie toutes les tâches de `user_id` et tous leurs jours, pour l'export RGPD.
+async def list_all_tasks_with_days(
+    session: AsyncSession, *, user_id: uuid.UUID
+) -> tuple[list[Task], list[TaskDay]]:
+    tasks = await session.execute(
+        select(Task).where(Task.user_id == user_id).order_by(Task.created_at, Task.id)
+    )
+    days = await session.execute(
+        select(TaskDay).where(TaskDay.user_id == user_id).order_by(TaskDay.task_id, TaskDay.day)
+    )
+    return list(tasks.scalars()), list(days.scalars())

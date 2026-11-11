@@ -8,6 +8,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.conftest import act_as
+
 pytestmark = pytest.mark.anyio
 
 VALID_HASH = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA"
@@ -19,7 +21,8 @@ INSERT_DAY = text(
 
 
 # requires : `session` est une session isolée.
-# assigns  : insère un compte et deux tâches dans une transaction annulée à la fin du test.
+# assigns  : insère un compte et deux tâches dans une transaction annulée à la fin du test, et
+#            déclare ce compte comme utilisateur courant pour la RLS.
 # ensures  : renvoie l'identifiant du compte et ceux de ses deux tâches.
 async def owner_with_tasks(session: AsyncSession) -> tuple[str, str, str]:
     user_id: str = (
@@ -31,6 +34,8 @@ async def owner_with_tasks(session: AsyncSession) -> tuple[str, str, str]:
             {"h": VALID_HASH},
         )
     ).scalar_one()
+    # Déclaré comme utilisateur courant : la RLS n'accepte que ses propres tâches.
+    await act_as(session, user_id)
     task_ids = []
     for _ in range(2):
         task_ids.append(

@@ -5,7 +5,7 @@ TaskHandler est une application web qui permet de **planifier ses tâches** dans
 Ce dépôt couvre pour l'instant uniquement le **backend** : une API REST construite avec FastAPI et
 PostgreSQL. Le frontend sera traité plus tard.
 
-> **État du projet :** comptes, sessions, anti-abus, tâches et grille en place ; durcissement à venir. L'avancement réel se lit dans la
+> **État du projet :** API complète et durcie (compte, RGPD, RLS, audit OWASP) ; déploiement à venir. L'avancement réel se lit dans la
 > [roadmap](docs/roadmap.md). Tout ce qui suit décrit la **cible** du projet.
 
 ---

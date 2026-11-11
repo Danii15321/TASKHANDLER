@@ -26,8 +26,8 @@ phase, pas avant.
 | 6 | Protection contre les abus | Terminée |
 | 7 | Vérification d'e-mail et réinitialisation | Terminée |
 | 8 | Tâches | Terminée |
-| 9 | Grille hebdomadaire | En relecture |
-| 10 | Durcissement, RGPD et audit | À faire |
+| 9 | Grille hebdomadaire | Terminée |
+| 10 | Durcissement, RGPD et audit | En relecture |
 | 11 | Conteneurisation et déploiement | À faire |
 
 ---
@@ -220,18 +220,18 @@ adresse connue d'une adresse inconnue.
 
 **Objectif :** fournir à la grille des données légères et fiables, sans aucun chevauchement.
 
-- [ ] Rédiger `docs/steps/step-9.md`
-- [ ] Interdire en base le chevauchement de deux tâches d'un utilisateur (`EXCLUDE`, extension `btree_gist`)
-- [ ] Traduire ce conflit en réponse `409`, y compris entre requêtes concurrentes
-- [ ] Implémenter `GET /planning?start=…&end=…`, avec une période de 31 jours au plus
-- [ ] Renvoyer dans la grille le titre et la position des tâches, jamais leur description
-- [ ] Valider les jours au format ISO 8601 et refuser les périodes incohérentes
-- [ ] Ajouter par migration le statut et `completed_at` à `task_days`, et la priorité à `tasks`
-- [ ] Définir les transitions de statut et la gestion de `completed_at`
-- [ ] Ajouter les filtres de la grille par statut et priorité
-- [ ] Implémenter une pagination par curseur sur `GET /tasks`, avec taille de page maximale
-- [ ] Créer les index composites à partir des requêtes réelles
-- [ ] Tester les chevauchements, les bornes, les filtres et l'isolation de la grille
+- [x] Rédiger `docs/steps/step-9.md`
+- [x] Interdire en base le chevauchement de deux tâches d'un utilisateur (`EXCLUDE`, extension `btree_gist`)
+- [x] Traduire ce conflit en réponse `409`, y compris entre requêtes concurrentes
+- [x] Implémenter `GET /planning?start=…&end=…`, avec une période de 31 jours au plus
+- [x] Renvoyer dans la grille le titre et la position des tâches, jamais leur description
+- [x] Valider les jours au format ISO 8601 et refuser les périodes incohérentes
+- [x] Ajouter par migration le statut et `completed_at` à `task_days`, et la priorité à `tasks`
+- [x] Définir les transitions de statut et la gestion de `completed_at`
+- [x] Ajouter les filtres de la grille par statut et priorité
+- [x] Implémenter une pagination par curseur sur `GET /tasks`, avec taille de page maximale
+- [x] Créer les index composites à partir des requêtes réelles
+- [x] Tester les chevauchements, les bornes, les filtres et l'isolation de la grille
 
 **Terminé lorsque :** deux requêtes simultanées ne peuvent pas occuper la même case, et la grille ne
 renvoie aucune description.
