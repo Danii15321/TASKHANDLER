@@ -112,6 +112,11 @@ class Settings(BaseSettings):
     database_lock_timeout_ms: int = Field(default=2_000, ge=100, le=60_000)
     database_idle_transaction_timeout_ms: int = Field(default=10_000, ge=100, le=600_000)
 
+    # Chaque hachage argon2id réserve 64 Mio : 4 hachages simultanés plafonnent la mémoire à
+    # 256 Mio. Au-delà, les demandes attendent leur tour, puis sont refusées (OWASP API4).
+    password_hash_max_concurrency: int = Field(default=4, ge=1, le=32)
+    password_hash_queue_timeout_seconds: int = Field(default=10, ge=1, le=60)
+
     # requires : les champs ont passé leur validation individuelle.
     # assigns  : rien.
     # ensures  : renvoie la configuration si l'URL est sûre ; sinon lève `ValueError`.

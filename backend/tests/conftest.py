@@ -24,6 +24,7 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import APP_DATABASE_ROLE, Settings
 from app.core.logging_config import JsonFormatter
+from app.db.session import get_session
 from app.main import create_app
 
 LogReader = Callable[[], list[dict[str, object]]]
@@ -255,3 +256,23 @@ async def database_client(database_app: FastAPI) -> AsyncIterator[httpx2.AsyncCl
     transport = httpx2.ASGITransport(app=database_app, raise_app_exceptions=False)
     async with httpx2.AsyncClient(transport=transport, base_url="http://test") as async_client:
         yield async_client
+
+
+# requires : `database_app` est reliée à PostgreSQL, `db_session` est une session isolée.
+# assigns  : remplace la session des routes par `db_session` le temps du test.
+# ensures  : fournit un client dont toutes les écritures, même validées, sont annulées à la fin.
+@pytest.fixture
+async def isolated_client(
+    database_app: FastAPI, db_session: AsyncSession
+) -> AsyncIterator[httpx2.AsyncClient]:
+    # requires : rien.
+    # assigns  : rien.
+    # ensures  : fournit la session isolée du test à la place d'une nouvelle session.
+    async def use_test_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    database_app.dependency_overrides[get_session] = use_test_session
+    transport = httpx2.ASGITransport(app=database_app, raise_app_exceptions=False)
+    async with httpx2.AsyncClient(transport=transport, base_url="http://test") as async_client:
+        yield async_client
+    database_app.dependency_overrides.clear()

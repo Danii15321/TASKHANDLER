@@ -7,13 +7,15 @@ ce qui permet aux tests de construire une application pour chaque environnement.
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 from app.core.config import Settings
 from app.core.errors import register_exception_handlers
 from app.core.logging_config import configure_logging
 from app.core.middleware import RequestContextMiddleware
+from app.core.passwords import PasswordHasherService
 from app.db.session import create_database_engine, create_session_factory
+from app.modules.auth.router import router as auth_router
 from app.modules.health.router import router as health_router
 
 
@@ -51,8 +53,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # en panne, et c'est `/health/ready` qui signale cette panne.
     app.state.engine = create_database_engine(resolved_settings)
     app.state.session_factory = create_session_factory(app.state.engine)
+    app.state.password_hasher = PasswordHasherService(
+        max_concurrency=resolved_settings.password_hash_max_concurrency,
+        queue_timeout_seconds=resolved_settings.password_hash_queue_timeout_seconds,
+    )
 
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)
     app.include_router(health_router)
+
+    # Toutes les routes métier sont versionnées : une évolution incompatible passera par
+    # `/api/v2`, sans casser les clients existants ni laisser de route oubliée (OWASP API9).
+    api_v1 = APIRouter(prefix="/api/v1")
+    api_v1.include_router(auth_router)
+    app.include_router(api_v1)
     return app

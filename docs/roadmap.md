@@ -20,8 +20,8 @@ phase, pas avant.
 | 0 | Dépôt et outillage qualité | Terminée |
 | 1 | Application FastAPI minimale | Terminée |
 | 2 | PostgreSQL et migrations | Terminée |
-| 3 | Intégration continue | En relecture |
-| 4 | Comptes et mots de passe | À faire |
+| 3 | Intégration continue | Terminée |
+| 4 | Comptes et mots de passe | En relecture |
 | 5 | Authentification et sessions | À faire |
 | 6 | Protection contre les abus | À faire |
 | 7 | Vérification d'e-mail et réinitialisation | À faire |
@@ -96,14 +96,14 @@ rôle applicatif ne peut pas exécuter `DROP TABLE`.
 
 **Objectif :** aucun changement n'est accepté sans passer les contrôles de qualité et de sécurité.
 
-- [ ] Rédiger `docs/steps/step-3.md`
-- [ ] Créer le pipeline CI avec un service PostgreSQL
-- [ ] Exécuter ruff, mypy et pytest
-- [ ] Contrôler que les migrations reflètent les modèles (`alembic check`)
-- [ ] Ajouter pip-audit et gitleaks sur tout l'historique
-- [ ] Épingler les actions CI par empreinte et restreindre les permissions du pipeline
-- [ ] Mesurer la couverture de tests et fixer un seuil
-- [ ] Travailler sur `daniel_dev` et protéger `main` : pull request et CI verte obligatoires
+- [x] Rédiger `docs/steps/step-3.md`
+- [x] Créer le pipeline CI avec un service PostgreSQL
+- [x] Exécuter ruff, mypy et pytest
+- [x] Contrôler que les migrations reflètent les modèles (`alembic check`)
+- [x] Ajouter pip-audit et gitleaks sur tout l'historique
+- [x] Épingler les actions CI par empreinte et restreindre les permissions du pipeline
+- [x] Mesurer la couverture de tests et fixer un seuil
+- [x] Travailler sur `daniel_dev` et protéger `main` : pull request et CI verte obligatoires
 
 **Terminé lorsque :** une dépendance vulnérable ou un test en échec bloque le pipeline.
 
