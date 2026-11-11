@@ -19,8 +19,8 @@ phase, pas avant.
 |---|---|---|
 | 0 | Dépôt et outillage qualité | Terminée |
 | 1 | Application FastAPI minimale | Terminée |
-| 2 | PostgreSQL et migrations | En relecture |
-| 3 | Intégration continue | À faire |
+| 2 | PostgreSQL et migrations | Terminée |
+| 3 | Intégration continue | En relecture |
 | 4 | Comptes et mots de passe | À faire |
 | 5 | Authentification et sessions | À faire |
 | 6 | Protection contre les abus | À faire |
@@ -75,17 +75,17 @@ journaux.
 **Objectif :** une base versionnée, accessible avec le moindre privilège et testée en conditions
 réelles.
 
-- [ ] Rédiger `docs/steps/step-2.md`
-- [ ] Ajouter PostgreSQL via Docker Compose pour le développement
-- [ ] Créer un rôle de migration (DDL) et un rôle applicatif (DML uniquement)
-- [ ] Installer SQLAlchemy asynchrone et asyncpg
-- [ ] Configurer moteur, pool de connexions et délais d'expiration des requêtes
-- [ ] Fournir la session par requête, avec annulation automatique en cas d'erreur
-- [ ] Définir la convention de nommage des contraintes
-- [ ] Initialiser Alembic avec le rôle de migration
-- [ ] Exposer `GET /health/ready`, sans détail sur l'infrastructure
-- [ ] Créer l'infrastructure de test sur un vrai PostgreSQL, isolée à chaque test
-- [ ] Vérifier que le rôle applicatif ne peut pas modifier le schéma
+- [x] Rédiger `docs/steps/step-2.md`
+- [x] Ajouter PostgreSQL via Docker Compose pour le développement
+- [x] Créer un rôle de migration (DDL) et un rôle applicatif (DML uniquement)
+- [x] Installer SQLAlchemy asynchrone et asyncpg
+- [x] Configurer moteur, pool de connexions et délais d'expiration des requêtes
+- [x] Fournir la session par requête, avec annulation automatique en cas d'erreur
+- [x] Définir la convention de nommage des contraintes
+- [x] Initialiser Alembic avec le rôle de migration
+- [x] Exposer `GET /health/ready`, sans détail sur l'infrastructure
+- [x] Créer l'infrastructure de test sur un vrai PostgreSQL, isolée à chaque test
+- [x] Vérifier que le rôle applicatif ne peut pas modifier le schéma
 
 **Terminé lorsque :** une migration s'applique puis s'annule proprement, et un test prouve que le
 rôle applicatif ne peut pas exécuter `DROP TABLE`.
@@ -103,6 +103,7 @@ rôle applicatif ne peut pas exécuter `DROP TABLE`.
 - [ ] Ajouter pip-audit et gitleaks sur tout l'historique
 - [ ] Épingler les actions CI par empreinte et restreindre les permissions du pipeline
 - [ ] Mesurer la couverture de tests et fixer un seuil
+- [ ] Travailler sur `daniel_dev` et protéger `main` : pull request et CI verte obligatoires
 
 **Terminé lorsque :** une dépendance vulnérable ou un test en échec bloque le pipeline.
 

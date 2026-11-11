@@ -53,7 +53,7 @@ Frontend, tâches récurrentes, partage entre utilisateurs, notifications, authe
 | Configuration | pydantic-settings | Configuration validée au démarrage |
 | Anti-abus | Redis | Compteurs partagés entre processus |
 | Tests | pytest + httpx2 sur un vrai PostgreSQL | Comportement identique à la production |
-| Qualité | ruff, mypy (mode strict), pre-commit | Erreurs détectées avant la relecture |
+| Qualité | ruff, mypy (mode strict), pre-commit, GitHub Actions | Erreurs détectées avant la relecture |
 | Sécurité outillée | pip-audit, gitleaks, règles Bandit de ruff | Dépendances, secrets, code |
 | Dépendances | uv + fichier de verrouillage | Installations reproductibles |
 
@@ -69,6 +69,7 @@ Le code est organisé par **domaine métier**, et chaque domaine est découpé e
 .
 ├── README.md
 ├── CLAUDE.md
+├── .github/workflows/       # Intégration continue
 ├── docs/
 │   ├── roadmap.md           # Phases et tâches à cocher
 │   └── steps/step-x.md      # Guide pédagogique détaillé de chaque phase
@@ -162,7 +163,7 @@ Le projet avance **phase par phase**, sans scaffold global.
 2. Chaque phase dispose d'un guide `docs/steps/step-x.md`, assez pédagogique pour qu'un humain
    puisse écrire le code lui-même.
 3. Le code, les dépendances et l'environnement n'apparaissent que lorsqu'une phase les requiert.
-4. Aucun commit n'est effectué sans autorisation explicite.
+4. Aucun commit sans autorisation explicite ; `main` n'évolue que par pull request depuis `daniel_dev`.
 
 Toute fonction est abondamment commentée et précédée des étiquettes `requires`, `assigns` et
 `ensures`, décrites en français :

@@ -14,8 +14,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "coverage>=7.17.2",
     "httpx2>=2.16.0",
     "mypy>=2.4.1",
+    "pip-audit>=2.10.1",
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",
     "ruff>=0.17.4",
@@ -77,3 +79,13 @@ addopts = [
 ]
 xfail_strict = true        # un test marqué « échec attendu » qui réussit fait échouer la suite
 filterwarnings = ["error"] # un avertissement est traité comme une erreur
+
+# --- Coverage : part du code réellement exécutée par les tests --------------------
+[tool.coverage.run]
+branch = true                    # chaque `if` doit être testé dans ses deux sens
+source = ["app", "migrations"]
+
+[tool.coverage.report]
+fail_under = 95   # sous ce seuil, `coverage report` échoue et la CI bloque le changement
+show_missing = true
+skip_covered = true
