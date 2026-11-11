@@ -72,7 +72,7 @@ jobs:
         run: scripts/generate-dev-env.sh
       # Le même `compose.yaml` qu'en développement : même image, mêmes rôles, mêmes droits.
       - name: Démarrer PostgreSQL
-        run: docker compose --env-file .env.postgres up --detach --wait
+        run: docker compose --env-file .env.compose up --detach --wait
       - name: Appliquer les migrations
         run: uv run --locked alembic upgrade head
       - name: Vérifier que les migrations reflètent les modèles

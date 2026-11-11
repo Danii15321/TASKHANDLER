@@ -1,12 +1,12 @@
 """Accès aux données des sessions. Chaque requête porte le propriétaire dans son `WHERE`."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import exists, func, insert, select, update
+from sqlalchemy import delete, exists, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.models import RefreshToken
+from app.modules.auth.models import OneTimeToken, RefreshToken
 from app.modules.users.models import User
 
 
@@ -103,5 +103,65 @@ async def get_authenticated_user(
         User.is_active.is_(True),
         User.token_version == token_version,
         session_is_active,
+    )
+    return (await session.execute(statement)).scalar_one_or_none()
+
+
+# requires : `token_hash` est l'empreinte SHA-256 d'un jeton neuf, `purpose` un usage connu, `ttl`
+#            respecte la durée maximale de cet usage.
+# assigns  : insère un jeton à usage unique, sans valider la transaction.
+# ensures  : le jeton est enregistré, utilisable une fois pendant `ttl`. L'expiration est calculée
+#            par PostgreSQL (`now() + ttl`), qui date aussi la création : une seule horloge, donc
+#            aucun décalage ne peut faire dépasser la durée maximale vérifiée par la table.
+async def insert_one_time_token(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    purpose: str,
+    token_hash: str,
+    ttl: timedelta,
+) -> None:
+    await session.execute(
+        insert(OneTimeToken).values(
+            user_id=user_id, purpose=purpose, token_hash=token_hash, expires_at=func.now() + ttl
+        )
+    )
+
+
+# requires : `purpose` est un usage connu.
+# assigns  : supprime les jetons encore inutilisés de cet utilisateur pour cet usage.
+# ensures  : seul le prochain jeton émis sera valable : un ancien lien resté dans une boîte mail
+#            ne sert plus à rien. Seules les lignes de `user_id` sont touchées.
+async def discard_unused_tokens(session: AsyncSession, *, user_id: uuid.UUID, purpose: str) -> None:
+    await session.execute(
+        delete(OneTimeToken)
+        .where(
+            OneTimeToken.user_id == user_id,
+            OneTimeToken.purpose == purpose,
+            OneTimeToken.used_at.is_(None),
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+
+# requires : `token_hash` est l'empreinte du jeton reçu, `purpose` l'usage attendu par la route.
+# assigns  : marque le jeton comme utilisé, sans valider la transaction.
+# ensures  : renvoie le propriétaire si le jeton existait, pour cet usage, inutilisé et non expiré ;
+#            sinon `None`. Une seule instruction `UPDATE … RETURNING` : deux requêtes simultanées
+#            ne peuvent pas consommer le même jeton.
+async def consume_one_time_token(
+    session: AsyncSession, *, token_hash: str, purpose: str
+) -> uuid.UUID | None:
+    statement = (
+        update(OneTimeToken)
+        .where(
+            OneTimeToken.token_hash == token_hash,
+            OneTimeToken.purpose == purpose,
+            OneTimeToken.used_at.is_(None),
+            OneTimeToken.expires_at > func.now(),
+        )
+        .values(used_at=func.now())
+        .returning(OneTimeToken.user_id)
+        .execution_options(synchronize_session=False)
     )
     return (await session.execute(statement)).scalar_one_or_none()

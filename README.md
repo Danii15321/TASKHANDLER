@@ -5,7 +5,7 @@ TaskHandler est une application web qui permet de **planifier ses tâches** dans
 Ce dépôt couvre pour l'instant uniquement le **backend** : une API REST construite avec FastAPI et
 PostgreSQL. Le frontend sera traité plus tard.
 
-> **État du projet :** socle, base de données, comptes, sessions et anti-abus en place. L'avancement réel se lit dans la
+> **État du projet :** comptes, sessions, anti-abus et e-mails en place ; tâches à venir. L'avancement réel se lit dans la
 > [roadmap](docs/roadmap.md). Tout ce qui suit décrit la **cible** du projet.
 
 ---
@@ -188,7 +188,7 @@ Prérequis : Git, Docker, OpenSSL et [uv](https://docs.astral.sh/uv/). Depuis `b
 uv sync --locked
 uv run --locked pre-commit install
 scripts/generate-dev-env.sh
-docker compose --env-file .env.postgres up --detach --wait
+docker compose --env-file .env.compose up --detach --wait
 uv run --locked alembic upgrade head
 ```
 

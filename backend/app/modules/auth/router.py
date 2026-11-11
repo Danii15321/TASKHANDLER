@@ -8,10 +8,12 @@ ajoutée plus tard ne peut pas oublier sa protection (OWASP API5).
 from datetime import UTC, datetime
 from http import HTTPStatus
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Response
 
 from app.core.client_ip import ClientIpDependency
 from app.core.dependencies import SettingsDependency
+from app.core.email import EmailSenderDependency
+from app.core.errors import ProblemResponse, build_problem
 from app.core.passwords import PasswordHasherDependency, PasswordHashingBusyError
 from app.core.rate_limit import (
     RateLimiterDependency,
@@ -19,12 +21,31 @@ from app.core.rate_limit import (
     RateLimitUnavailableError,
 )
 from app.core.tokens import ACCESS_TOKEN_TTL
-from app.db.session import SessionDependency
+from app.db.session import SessionDependency, SessionFactoryDependency
+from app.modules.auth.account_flows import (
+    InvalidOneTimeTokenError,
+    PasswordRejectedError,
+    guard_password_reset_request,
+    process_password_reset_request,
+    process_registration,
+    process_verification_resend,
+    reset_password,
+    verify_email,
+)
 from app.modules.auth.dependencies import AUTHENTICATED_DEPENDENCIES, CurrentUserDependency
 from app.modules.auth.limits import protection_unavailable, too_many_requests
-from app.modules.auth.schemas import LoginRequest, RefreshRequest, RegisterRequest, TokenResponse
+from app.modules.auth.schemas import (
+    AcceptedResponse,
+    ForgotPasswordRequest,
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+    ResetPasswordRequest,
+    TokenResponse,
+    VerifyEmailRequest,
+)
 from app.modules.auth.service import (
-    EmailAlreadyRegisteredError,
+    EmailNotVerifiedError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
     IssuedTokens,
@@ -32,10 +53,8 @@ from app.modules.auth.service import (
     close_session,
     guard_registration,
     log_in,
-    register_user,
     rotate_refresh_token,
 )
-from app.modules.users.schemas import UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 session_router = APIRouter(prefix="/auth", tags=["auth"], dependencies=AUTHENTICATED_DEPENDENCIES)
@@ -44,6 +63,10 @@ session_router = APIRouter(prefix="/auth", tags=["auth"], dependencies=AUTHENTIC
 _BUSY_RETRY_AFTER_SECONDS = "5"
 # Message unique : il ne dit jamais si c'est l'adresse ou le mot de passe qui est faux.
 INVALID_CREDENTIALS_DETAIL = "Identifiants invalides."
+EMAIL_NOT_VERIFIED_DETAIL = (
+    "Adresse e-mail non vérifiée. Un lien de vérification vous a été envoyé."
+)
+INVALID_LINK_DETAIL = "Lien invalide ou expiré."
 
 
 # requires : rien.
@@ -69,43 +92,67 @@ def _token_response(tokens: IssuedTokens, response: Response) -> TokenResponse:
     )
 
 
+# requires : `error` vient du limiteur ou de Redis.
+# assigns  : rien.
+# ensures  : renvoie l'erreur HTTP correspondante : 429 avec `Retry-After`, ou 503.
+def _limit_error(error: RateLimitExceededError | RateLimitUnavailableError) -> HTTPException:
+    if isinstance(error, RateLimitExceededError):
+        return too_many_requests(error)
+    return protection_unavailable()
+
+
 # requires : rien (route publique, sans authentification).
-# assigns  : crée un compte dans `users`.
-# ensures  : renvoie 201 et la vue publique du compte ; 409 si l'adresse existe déjà ; 422 si la
-#            demande est invalide ; 429 au-delà des limites ; 503 si le serveur est saturé ou si
-#            Redis est indisponible. Aucune réponse ne contient le
-#            mot de passe ni son empreinte.
-@router.post("/register", status_code=HTTPStatus.CREATED, response_model=UserRead)
+# assigns  : programme, après la réponse, la création du compte et l'envoi d'un e-mail.
+# ensures  : renvoie 202 à l'identique, que l'adresse soit libre ou déjà inscrite ; 422 si la
+#            demande est invalide (indépendamment de l'adresse) ; 429 au-delà des limites ; 503 si
+#            Redis est indisponible. Aucune réponse ne contient le mot de passe.
+@router.post("/register", status_code=HTTPStatus.ACCEPTED, response_model=AcceptedResponse)
 async def register(
     payload: RegisterRequest,
-    session: SessionDependency,
+    background_tasks: BackgroundTasks,
     hasher: PasswordHasherDependency,
     limiter: RateLimiterDependency,
     settings: SettingsDependency,
     client_ip: ClientIpDependency,
-) -> UserRead:
+    sender: EmailSenderDependency,
+    session_factory: SessionFactoryDependency,
+) -> AcceptedResponse:
     try:
         await guard_registration(limiter, settings, email=payload.email, client_ip=client_ip)
-        user = await register_user(session, hasher, email=payload.email, password=payload.password)
-    except RateLimitExceededError as error:
-        raise too_many_requests(error) from None
-    except RateLimitUnavailableError:
-        raise protection_unavailable() from None
-    except EmailAlreadyRegisteredError:
+    except (RateLimitExceededError, RateLimitUnavailableError) as error:
+        raise _limit_error(error) from None
+    # Tout ce qui dépend de l'existence de l'adresse se passe après la réponse.
+    background_tasks.add_task(
+        process_registration,
+        session_factory,
+        hasher,
+        sender,
+        settings,
+        email=payload.email,
+        password=payload.password,
+    )
+    return AcceptedResponse(status="accepted")
+
+
+# requires : rien (route publique : le jeton reçu par e-mail est lui-même la preuve).
+# assigns  : consomme le jeton et marque l'adresse vérifiée.
+# ensures  : renvoie 204 ; 400 si le lien est inconnu, expiré, déjà utilisé ou d'un autre usage.
+@router.post("/verify-email", status_code=HTTPStatus.NO_CONTENT)
+async def confirm_email(payload: VerifyEmailRequest, session: SessionDependency) -> None:
+    try:
+        await verify_email(session, token=payload.token)
+    except InvalidOneTimeTokenError:
         raise HTTPException(
-            status_code=HTTPStatus.CONFLICT, detail="Cette adresse ne peut pas être utilisée."
+            status_code=HTTPStatus.BAD_REQUEST, detail=INVALID_LINK_DETAIL
         ) from None
-    except PasswordHashingBusyError:
-        raise _busy() from None
-    # Conversion explicite : le modèle ORM ne quitte jamais la couche service.
-    return UserRead.model_validate(user)
 
 
 # requires : rien (route publique, sans authentification).
 # assigns  : ouvre une session ; met à niveau l'empreinte si nécessaire.
 # ensures  : renvoie 200 et une paire de jetons ; 401 avec un message unique si l'adresse est
-#            inconnue, le mot de passe faux ou le compte inactif ; 429 au-delà des limites ou
-#            pendant la temporisation ; 503 si le serveur est saturé ou Redis indisponible.
+#            inconnue, le mot de passe faux ou le compte inactif ; 403 si, mot de passe correct,
+#            l'adresse n'est pas vérifiée (un nouveau lien part alors) ; 429 au-delà des limites
+#            ou pendant la temporisation ; 503 si le serveur est saturé ou Redis indisponible.
 @router.post("/login", response_model=TokenResponse)
 async def login(
     payload: LoginRequest,
@@ -115,7 +162,10 @@ async def login(
     limiter: RateLimiterDependency,
     settings: SettingsDependency,
     client_ip: ClientIpDependency,
-) -> TokenResponse:
+    background_tasks: BackgroundTasks,
+    sender: EmailSenderDependency,
+    session_factory: SessionFactoryDependency,
+) -> TokenResponse | ProblemResponse:
     try:
         tokens = await log_in(
             session,
@@ -127,16 +177,27 @@ async def login(
             client_ip=client_ip,
             now=datetime.now(UTC),
         )
-    except RateLimitExceededError as error:
-        raise too_many_requests(error) from None
-    except RateLimitUnavailableError:
-        raise protection_unavailable() from None
+    except (RateLimitExceededError, RateLimitUnavailableError) as error:
+        raise _limit_error(error) from None
     except InvalidCredentialsError:
         raise HTTPException(
             status_code=HTTPStatus.UNAUTHORIZED,
             detail=INVALID_CREDENTIALS_DETAIL,
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
+    except EmailNotVerifiedError as error:
+        background_tasks.add_task(
+            process_verification_resend,
+            session_factory,
+            sender,
+            limiter,
+            settings,
+            user_id=error.user_id,
+        )
+        # Réponse renvoyée, et non levée : FastAPI abandonnerait sinon la tâche programmée.
+        problem = build_problem(HTTPStatus.FORBIDDEN, EMAIL_NOT_VERIFIED_DETAIL)
+        problem.background = background_tasks
+        return problem
     except PasswordHashingBusyError:
         raise _busy() from None
     return _token_response(tokens, response)
@@ -158,10 +219,8 @@ async def refresh(
         tokens = await rotate_refresh_token(
             session, settings, limiter, refresh_token=payload.refresh_token, now=datetime.now(UTC)
         )
-    except RateLimitExceededError as error:
-        raise too_many_requests(error) from None
-    except RateLimitUnavailableError:
-        raise protection_unavailable() from None
+    except (RateLimitExceededError, RateLimitUnavailableError) as error:
+        raise _limit_error(error) from None
     except InvalidRefreshTokenError:
         raise HTTPException(
             status_code=HTTPStatus.UNAUTHORIZED,
@@ -169,6 +228,57 @@ async def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
     return _token_response(tokens, response)
+
+
+# requires : rien (route publique, sans authentification).
+# assigns  : programme, après la réponse, l'envoi d'un lien si un compte actif existe.
+# ensures  : renvoie 202 à l'identique, adresse connue ou non ; 429 au-delà des limites ; 503 si
+#            Redis est indisponible.
+@router.post("/password/forgot", status_code=HTTPStatus.ACCEPTED, response_model=AcceptedResponse)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    limiter: RateLimiterDependency,
+    settings: SettingsDependency,
+    client_ip: ClientIpDependency,
+    sender: EmailSenderDependency,
+    session_factory: SessionFactoryDependency,
+) -> AcceptedResponse:
+    try:
+        await guard_password_reset_request(
+            limiter, settings, email=payload.email, client_ip=client_ip
+        )
+    except (RateLimitExceededError, RateLimitUnavailableError) as error:
+        raise _limit_error(error) from None
+    background_tasks.add_task(
+        process_password_reset_request, session_factory, sender, settings, email=payload.email
+    )
+    return AcceptedResponse(status="accepted")
+
+
+# requires : rien (route publique : le jeton reçu par e-mail est lui-même la preuve).
+# assigns  : remplace le mot de passe et coupe toutes les sessions du compte.
+# ensures  : renvoie 204 ; 400 si le lien n'est pas valable ; 422 si le mot de passe est refusé
+#            (le lien reste alors utilisable) ; 503 si le serveur est saturé.
+@router.post("/password/reset", status_code=HTTPStatus.NO_CONTENT)
+async def reset_forgotten_password(
+    payload: ResetPasswordRequest, session: SessionDependency, hasher: PasswordHasherDependency
+) -> None:
+    try:
+        await reset_password(
+            session, hasher, token=payload.token, new_password=payload.new_password
+        )
+    except InvalidOneTimeTokenError:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail=INVALID_LINK_DETAIL
+        ) from None
+    except PasswordRejectedError:
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail="Le mot de passe ne doit pas reprendre l'adresse e-mail.",
+        ) from None
+    except PasswordHashingBusyError:
+        raise _busy() from None
 
 
 # requires : un jeton d'accès valide et la limite par utilisateur (vérifiés par le routeur).

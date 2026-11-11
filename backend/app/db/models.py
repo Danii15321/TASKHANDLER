@@ -5,9 +5,9 @@ invisible, et une migration oubliée passerait inaperçue.
 """
 
 from app.db.base import Base
-from app.modules.auth.models import RefreshToken
+from app.modules.auth.models import OneTimeToken, RefreshToken
 from app.modules.users.models import User
 
 metadata = Base.metadata
 
-__all__ = ["RefreshToken", "User", "metadata"]
+__all__ = ["OneTimeToken", "RefreshToken", "User", "metadata"]

@@ -58,3 +58,15 @@ async def increment_token_version(session: AsyncSession, *, user_id: uuid.UUID) 
         .values(token_version=User.token_version + 1)
         .execution_options(synchronize_session=False)
     )
+
+
+# requires : rien.
+# assigns  : date la vérification de l'adresse, si elle ne l'était pas déjà.
+# ensures  : l'adresse du compte est marquée vérifiée ; une date existante n'est jamais modifiée.
+async def mark_email_verified(session: AsyncSession, *, user_id: uuid.UUID) -> None:
+    await session.execute(
+        update(User)
+        .where(User.id == user_id, User.email_verified_at.is_(None))
+        .values(email_verified_at=func.now())
+        .execution_options(synchronize_session=False)
+    )

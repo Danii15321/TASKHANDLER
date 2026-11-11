@@ -7,7 +7,7 @@ import os
 import secrets
 import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 from typing import Self
 
@@ -25,8 +25,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 from sqlalchemy.pool import NullPool
 
 from app.core.config import APP_DATABASE_ROLE, Settings
+from app.core.email import OutgoingEmail
 from app.core.logging_config import JsonFormatter
-from app.db.session import get_session
+from app.db.session import SessionFactory, get_session, get_session_factory
 from app.main import create_app
 
 LogReader = Callable[[], list[dict[str, object]]]
@@ -67,6 +68,77 @@ def unique_rate_limit_prefix() -> str:
     return f"rl:test:{uuid.uuid4().hex}:"
 
 
+class RecordingEmailSender:
+    """Expéditeur de test : garde les e-mails en mémoire au lieu de les envoyer."""
+
+    # requires : rien.
+    # assigns  : initialise la boîte d'envoi.
+    # ensures  : aucun e-mail n'a encore été envoyé.
+    def __init__(self) -> None:
+        self.sent: list[OutgoingEmail] = []
+
+    # requires : rien.
+    # assigns  : ajoute l'e-mail à `sent`.
+    # ensures  : l'e-mail est consultable par le test.
+    async def send(self, email: OutgoingEmail) -> None:
+        self.sent.append(email)
+
+    # requires : rien.
+    # assigns  : rien.
+    # ensures  : renvoie les e-mails envoyés à `recipient`, du plus ancien au plus récent.
+    def to(self, recipient: str) -> list[OutgoingEmail]:
+        return [email for email in self.sent if email.recipient == recipient]
+
+    # requires : un e-mail contenant un lien `path#token=…` a été envoyé à `recipient`.
+    # assigns  : rien.
+    # ensures  : renvoie le jeton du lien le plus récent vers `path`.
+    def latest_token(self, recipient: str, path: str) -> str:
+        marker = f"{path}#token="
+        for email in reversed(self.to(recipient)):
+            if marker in email.body:
+                return email.body.split(marker, 1)[1].split()[0]
+        raise AssertionError(f"aucun lien {path} envoyé à {recipient}")
+
+
+class OutboxClient(httpx2.AsyncClient):
+    """Client HTTP de test qui voit aussi les e-mails envoyés et la base de l'application."""
+
+    # requires : `outbox` est l'expéditeur de l'application, `session_factory` sa base.
+    # assigns  : initialise le client.
+    # ensures  : le client envoie ses requêtes à l'application par `transport`.
+    def __init__(
+        self,
+        *,
+        transport: httpx2.ASGITransport,
+        outbox: RecordingEmailSender,
+        session_factory: SessionFactory,
+    ) -> None:
+        super().__init__(transport=transport, base_url="http://test")
+        self.outbox = outbox
+        self.session_factory = session_factory
+
+
+# requires : `session` est la session isolée du test.
+# assigns  : rien.
+# ensures  : renvoie une fabrique qui prête cette session sans jamais la fermer : les tâches
+#            d'arrière-plan écrivent ainsi dans la transaction annulée du test.
+def borrowing_factory(session: AsyncSession) -> SessionFactory:
+    # requires : rien.
+    # assigns  : rien.
+    # ensures  : prête la session du test, sans la fermer à la sortie.
+    @asynccontextmanager
+    async def borrow() -> AsyncIterator[AsyncSession]:
+        yield session
+
+    # requires : rien.
+    # assigns  : rien.
+    # ensures  : renvoie un gestionnaire de contexte qui prête la session.
+    def factory() -> AbstractAsyncContextManager[AsyncSession]:
+        return borrow()
+
+    return factory
+
+
 class DatabaseTestSettings(BaseSettings):
     """URL de la base de test ; `.env.test` ou l'environnement doivent les fournir."""
 
@@ -82,6 +154,8 @@ class DatabaseTestSettings(BaseSettings):
     app_database_url: SecretStr
     migration_database_url: SecretStr
     redis_url: SecretStr
+    smtp_port: int
+    mailpit_api_url: str
 
     # requires : les deux URL sont renseignées.
     # assigns  : rien.
@@ -125,8 +199,8 @@ async def isolated_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
 
 # requires : rien.
-# assigns  : retire du processus les variables `TASKHANDLER_*` et fixe la clé JWT de test, le
-#            temps du test.
+# assigns  : retire du processus les variables `TASKHANDLER_*`, puis fixe les réglages
+#            obligatoires de test (clé JWT, Redis et e-mail injoignables), le temps du test.
 # ensures  : un test ne dépend jamais de la configuration de la machine qui l'exécute ; seule la
 #            clé de signature, obligatoire, est fournie (un test peut la retirer).
 @pytest.fixture(autouse=True)
@@ -136,6 +210,16 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.delenv(name)
     monkeypatch.setenv("TASKHANDLER_JWT_SECRET", TEST_JWT_SECRET)
     monkeypatch.setenv("TASKHANDLER_REDIS_URL", unreachable_redis_url().get_secret_value())
+    # Réglages d'e-mail valables partout, production comprise ; le port 1 est fermé.
+    for name, value in {
+        "TASKHANDLER_SMTP_HOST": "127.0.0.1",
+        "TASKHANDLER_SMTP_PORT": "1",
+        "TASKHANDLER_SMTP_USERNAME": "taskhandler",
+        "TASKHANDLER_SMTP_PASSWORD": UNUSED_CREDENTIAL,
+        "TASKHANDLER_EMAIL_FROM": "ne-pas-repondre@taskhandler.fr",
+        "TASKHANDLER_FRONTEND_BASE_URL": "https://app.taskhandler.fr",
+    }.items():
+        monkeypatch.setenv(name, value)
 
 
 # requires : rien.
@@ -279,31 +363,48 @@ async def database_app(
 
 
 # requires : `database_app` est reliée à PostgreSQL.
-# assigns  : rien.
-# ensures  : fournit un client asynchrone, sur la même boucle d'événements que le test.
+# assigns  : remplace l'expéditeur d'e-mails par un enregistreur.
+# ensures  : fournit un client asynchrone, sur la même boucle d'événements que le test, dont les
+#            écritures sont réellement validées en base.
 @pytest.fixture
-async def database_client(database_app: FastAPI) -> AsyncIterator[httpx2.AsyncClient]:
+async def database_client(database_app: FastAPI) -> AsyncIterator[OutboxClient]:
+    outbox = RecordingEmailSender()
+    database_app.state.email_sender = outbox
     transport = httpx2.ASGITransport(app=database_app, raise_app_exceptions=False)
-    async with httpx2.AsyncClient(transport=transport, base_url="http://test") as async_client:
+    async with OutboxClient(
+        transport=transport, outbox=outbox, session_factory=database_app.state.session_factory
+    ) as async_client:
         yield async_client
 
 
 # requires : `database_app` est reliée à PostgreSQL, `db_session` est une session isolée.
-# assigns  : remplace la session des routes par `db_session` le temps du test.
+# assigns  : remplace la session des routes et des tâches d'arrière-plan par `db_session`, et
+#            l'expéditeur d'e-mails par un enregistreur, le temps du test.
 # ensures  : fournit un client dont toutes les écritures, même validées, sont annulées à la fin.
 @pytest.fixture
 async def isolated_client(
     database_app: FastAPI, db_session: AsyncSession
-) -> AsyncIterator[httpx2.AsyncClient]:
+) -> AsyncIterator[OutboxClient]:
     # requires : rien.
-    # assigns  : rien.
-    # ensures  : fournit la session isolée du test à la place d'une nouvelle session.
+    # assigns  : annule la transaction en cours si la route lève une erreur.
+    # ensures  : fournit la session isolée du test à la place d'une nouvelle session, avec la même
+    #            annulation automatique que `get_session` en production.
     async def use_test_session() -> AsyncIterator[AsyncSession]:
-        yield db_session
+        try:
+            yield db_session
+        except Exception:
+            await db_session.rollback()
+            raise
 
+    factory = borrowing_factory(db_session)
+    outbox = RecordingEmailSender()
+    database_app.state.email_sender = outbox
     database_app.dependency_overrides[get_session] = use_test_session
+    database_app.dependency_overrides[get_session_factory] = lambda: factory
     transport = httpx2.ASGITransport(app=database_app, raise_app_exceptions=False)
-    async with httpx2.AsyncClient(transport=transport, base_url="http://test") as async_client:
+    async with OutboxClient(
+        transport=transport, outbox=outbox, session_factory=factory
+    ) as async_client:
         yield async_client
     database_app.dependency_overrides.clear()
 
@@ -313,19 +414,30 @@ LOGIN_URL = "/api/v1/auth/login"
 REFRESH_URL = "/api/v1/auth/refresh"
 LOGOUT_URL = "/api/v1/auth/logout"
 LOGOUT_ALL_URL = "/api/v1/auth/logout-all"
+VERIFY_EMAIL_URL = "/api/v1/auth/verify-email"
+FORGOT_PASSWORD_URL = "/api/v1/auth/password/forgot"
+RESET_PASSWORD_URL = "/api/v1/auth/password/reset"
 TEST_PASSPHRASE = "violet ruisseau lanterne 2026"
 
 
 # requires : `client` est relié à l'application de test.
-# assigns  : crée un compte.
-# ensures  : renvoie l'identifiant du compte créé ; échoue si l'inscription est refusée.
+# assigns  : crée un compte et vérifie son adresse, en suivant le lien reçu par e-mail.
+# ensures  : renvoie l'identifiant du compte créé, prêt à se connecter ; échoue sinon.
 async def create_account(
-    client: httpx2.AsyncClient, email: str = "alice@exemple.org", password: str = TEST_PASSPHRASE
+    client: OutboxClient, email: str = "alice@exemple.org", password: str = TEST_PASSPHRASE
 ) -> str:
     response = await client.post(REGISTER_URL, json={"email": email, "password": password})
-    assert response.status_code == 201, response.text
-    account_id: str = response.json()["id"]
-    return account_id
+    assert response.status_code == 202, response.text
+    token = client.outbox.latest_token(email, "/verify-email")
+    verified = await client.post(VERIFY_EMAIL_URL, json={"token": token})
+    assert verified.status_code == 204, verified.text
+    async with client.session_factory() as session:
+        account_id = (
+            await session.execute(
+                text("SELECT id FROM users WHERE email = :email"), {"email": email}
+            )
+        ).scalar_one()
+    return str(account_id)
 
 
 # requires : `client` est relié à l'application de test, le compte existe.

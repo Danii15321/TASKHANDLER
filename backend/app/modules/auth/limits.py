@@ -59,6 +59,27 @@ def authenticated_user_limit(settings: Settings) -> Limit:
     return Limit("authenticated-user", settings.authenticated_user_limit_per_minute, _MINUTE)
 
 
+# requires : `settings` est valide.
+# assigns  : rien.
+# ensures  : renvoie la limite de « mot de passe oublié » par IP (5 par heure par défaut).
+def forgot_password_ip_limit(settings: Settings) -> Limit:
+    return Limit("forgot-ip", settings.forgot_password_ip_limit_per_hour, _HOUR)
+
+
+# requires : `settings` est valide.
+# assigns  : rien.
+# ensures  : renvoie la limite de « mot de passe oublié » par adresse (3 par heure par défaut).
+def forgot_password_email_limit(settings: Settings) -> Limit:
+    return Limit("forgot-email", settings.forgot_password_email_limit_per_hour, _HOUR)
+
+
+# requires : `settings` est valide.
+# assigns  : rien.
+# ensures  : renvoie la limite de renvoi du lien de vérification par compte (3 par heure).
+def verification_resend_limit(settings: Settings) -> Limit:
+    return Limit("verification-resend", settings.verification_resend_limit_per_hour, _HOUR)
+
+
 # requires : `error` vient du limiteur.
 # assigns  : rien.
 # ensures  : renvoie l'erreur 429 avec `Retry-After`, sans dire quelle limite a été atteinte.

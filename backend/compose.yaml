@@ -1,5 +1,5 @@
-# PostgreSQL et Redis pour le développement local uniquement.
-# Lancement : docker compose --env-file .env.postgres up --detach --wait
+# PostgreSQL, Redis et Mailpit pour le développement local uniquement.
+# Lancement : docker compose --env-file .env.compose up --detach --wait
 name: taskhandler
 
 services:
@@ -48,6 +48,25 @@ services:
     healthcheck:
       # `REDISCLI_AUTH` : le mot de passe ne figure pas dans les arguments de la commande.
       test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$TASKHANDLER_REDIS_PASSWORD\" redis-cli --user taskhandler_app --no-auth-warning ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mailpit:
+    # Mailpit 1.33.1 : faux serveur SMTP, qui garde les e-mails au lieu de les envoyer. Il sert
+    # uniquement au développement et aux tests ; jamais en production.
+    image: axllent/mailpit@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    environment:
+      # Borne la mémoire : au-delà, les plus anciens messages sont supprimés.
+      MP_MAX_MESSAGES: "500"
+    ports:
+      # SMTP et interface web, sur 127.0.0.1 uniquement.
+      - "127.0.0.1:${TASKHANDLER_SMTP_PORT:-51025}:1025"
+      - "127.0.0.1:${TASKHANDLER_MAILPIT_UI_PORT:-58025}:8025"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 2s
       timeout: 3s
       retries: 30

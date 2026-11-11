@@ -1,4 +1,4 @@
-"""Jetons de session : accès (JWT signé, 15 minutes) et renouvellement (opaque, stocké haché)."""
+"""Jetons : accès (JWT signé, 15 minutes) et jetons opaques (renouvellement, liens d'e-mail)."""
 
 import hashlib
 import secrets
@@ -20,8 +20,8 @@ JWT_AUDIENCE = "taskhandler-api"
 _REQUIRED_CLAIMS = ["iss", "aud", "sub", "iat", "exp", "jti", "sid", "ver"]
 
 # 32 octets d'aléa : `secrets.token_urlsafe(32)` produit 43 caractères URL-safe.
-_REFRESH_TOKEN_BYTES = 32
-REFRESH_TOKEN_LENGTH = 43
+_OPAQUE_TOKEN_BYTES = 32
+OPAQUE_TOKEN_LENGTH = 43
 
 
 class InvalidAccessTokenError(Exception):
@@ -93,15 +93,16 @@ def decode_access_token(token: str, *, secret: SecretStr) -> AccessTokenClaims:
 
 # requires : rien.
 # assigns  : rien (lit seulement le générateur aléatoire du système).
-# ensures  : renvoie un jeton opaque de 256 bits, issu de `secrets` et jamais de `random`.
-def new_refresh_token() -> str:
-    return secrets.token_urlsafe(_REFRESH_TOKEN_BYTES)
+# ensures  : renvoie un jeton opaque de 256 bits, issu de `secrets` et jamais de `random`. Sert
+#            au renouvellement de session comme aux liens de vérification et de réinitialisation.
+def new_opaque_token() -> str:
+    return secrets.token_urlsafe(_OPAQUE_TOKEN_BYTES)
 
 
-# requires : `token` est un jeton de renouvellement.
+# requires : `token` est un jeton opaque.
 # assigns  : rien (fonction pure).
 # ensures  : renvoie son empreinte SHA-256 en hexadécimal, seule forme stockée en base.
-def hash_refresh_token(token: str) -> str:
+def hash_opaque_token(token: str) -> str:
     # SHA-256 suffit ici, contrairement aux mots de passe : avec 256 bits d'aléa, un jeton ne se
     # devine pas, et une base volée ne permet pas de retrouver les jetons à partir des empreintes.
     return hashlib.sha256(token.encode("ascii")).hexdigest()

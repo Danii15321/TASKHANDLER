@@ -26,6 +26,7 @@ from tests.conftest import (
     REFRESH_URL,
     TEST_JWT_SECRET,
     LogReader,
+    OutboxClient,
     bearer,
     create_account,
     login_tokens,
@@ -85,7 +86,7 @@ def claims_of(access_token: str) -> dict[str, Any]:
 # assigns  : crée un compte et une session dans une transaction annulée à la fin du test.
 # ensures  : un jeton d'accès valide donne accès à une route protégée, pour le bon compte.
 async def test_valid_access_token_grants_access(
-    protected_app: FastAPI, isolated_client: httpx2.AsyncClient
+    protected_app: FastAPI, isolated_client: OutboxClient
 ) -> None:
     account_id = await create_account(isolated_client)
     tokens = await login_tokens(isolated_client)
@@ -101,7 +102,7 @@ async def test_valid_access_token_grants_access(
 # ensures  : en-tête absent, autre schéma, jeton illisible, expiré, falsifié, non signé ou d'un
 #            autre algorithme : toujours 401, au même format, avec `WWW-Authenticate`.
 async def test_invalid_credentials_are_rejected(
-    protected_app: FastAPI, isolated_client: httpx2.AsyncClient
+    protected_app: FastAPI, isolated_client: OutboxClient
 ) -> None:
     await create_account(isolated_client)
     valid = claims_of((await login_tokens(isolated_client))["access_token"])
@@ -129,7 +130,7 @@ async def test_invalid_credentials_are_rejected(
 # assigns  : désactive le compte dans une transaction annulée à la fin du test.
 # ensures  : un jeton encore valide est refusé dès que le compte est désactivé.
 async def test_inactive_account_is_rejected(
-    protected_app: FastAPI, isolated_client: httpx2.AsyncClient, db_session: AsyncSession
+    protected_app: FastAPI, isolated_client: OutboxClient, db_session: AsyncSession
 ) -> None:
     await create_account(isolated_client)
     tokens = await login_tokens(isolated_client)
@@ -145,7 +146,7 @@ async def test_inactive_account_is_rejected(
 # ensures  : un jeton correctement signé mais pour un compte inconnu ou une session inexistante
 #            est refusé : la signature ne suffit pas, la base fait foi.
 async def test_signed_token_for_unknown_session_is_rejected(
-    protected_app: FastAPI, isolated_client: httpx2.AsyncClient
+    protected_app: FastAPI, isolated_client: OutboxClient
 ) -> None:
     account_id = uuid.UUID(await create_account(isolated_client))
     await login_tokens(isolated_client)
@@ -165,7 +166,7 @@ async def test_signed_token_for_unknown_session_is_rejected(
 # assigns  : renouvelle une session dans une transaction annulée à la fin du test.
 # ensures  : le renouvellement donne une nouvelle paire, révoque l'ancien jeton et garde la session.
 async def test_refresh_rotates_tokens(
-    protected_app: FastAPI, isolated_client: httpx2.AsyncClient, db_session: AsyncSession
+    protected_app: FastAPI, isolated_client: OutboxClient, db_session: AsyncSession
 ) -> None:
     await create_account(isolated_client)
     first = await login_tokens(isolated_client)
@@ -196,7 +197,7 @@ async def test_refresh_rotates_tokens(
 #            les jetons d'accès déjà émis, et l'événement est journalisé.
 async def test_reused_refresh_token_revokes_whole_session(
     protected_app: FastAPI,
-    isolated_client: httpx2.AsyncClient,
+    isolated_client: OutboxClient,
     db_session: AsyncSession,
     read_logs: LogReader,
 ) -> None:
@@ -238,7 +239,7 @@ async def test_reused_refresh_token_revokes_whole_session(
     ],
 )
 async def test_expired_refresh_token_is_refused(
-    isolated_client: httpx2.AsyncClient, db_session: AsyncSession, update: str
+    isolated_client: OutboxClient, db_session: AsyncSession, update: str
 ) -> None:
     await create_account(isolated_client)
     tokens = await login_tokens(isolated_client)
@@ -273,7 +274,7 @@ async def test_expired_refresh_token_is_refused(
     ],
 )
 async def test_invalid_refresh_requests_are_refused(
-    isolated_client: httpx2.AsyncClient, payload: dict[str, object], status: int
+    isolated_client: OutboxClient, payload: dict[str, object], status: int
 ) -> None:
     assert (await isolated_client.post(REFRESH_URL, json=payload)).status_code == status
 
@@ -282,7 +283,7 @@ async def test_invalid_refresh_requests_are_refused(
 # assigns  : ouvre deux sessions puis en ferme une, dans une transaction annulée à la fin du test.
 # ensures  : la déconnexion coupe immédiatement sa session, et seulement elle.
 async def test_logout_closes_only_current_session(
-    protected_app: FastAPI, isolated_client: httpx2.AsyncClient
+    protected_app: FastAPI, isolated_client: OutboxClient
 ) -> None:
     await create_account(isolated_client)
     laptop = await login_tokens(isolated_client)
@@ -305,7 +306,7 @@ async def test_logout_closes_only_current_session(
 # assigns  : ouvre deux sessions puis les ferme toutes, dans une transaction annulée à la fin.
 # ensures  : la déconnexion globale coupe toutes les sessions et incrémente `token_version`.
 async def test_logout_all_closes_every_session(
-    protected_app: FastAPI, isolated_client: httpx2.AsyncClient, db_session: AsyncSession
+    protected_app: FastAPI, isolated_client: OutboxClient, db_session: AsyncSession
 ) -> None:
     await create_account(isolated_client)
     laptop = await login_tokens(isolated_client)
@@ -330,7 +331,7 @@ async def test_logout_all_closes_every_session(
 # ensures  : sans jeton, avec un jeton expiré ou falsifié, la route répond 401 sans rien modifier.
 @pytest.mark.parametrize("url", [LOGOUT_URL, LOGOUT_ALL_URL])
 async def test_session_routes_require_authentication(
-    isolated_client: httpx2.AsyncClient, db_session: AsyncSession, url: str
+    isolated_client: OutboxClient, db_session: AsyncSession, url: str
 ) -> None:
     await create_account(isolated_client)
     tokens = await login_tokens(isolated_client)
@@ -359,8 +360,8 @@ async def test_session_routes_require_authentication(
 # ensures  : fournit un client sans session isolée, et l'identifiant du compte créé.
 @pytest.fixture
 async def committed_account(
-    database_client: httpx2.AsyncClient, app_engine: AsyncEngine
-) -> AsyncIterator[tuple[httpx2.AsyncClient, str]]:
+    database_client: OutboxClient, app_engine: AsyncEngine
+) -> AsyncIterator[tuple[OutboxClient, str]]:
     email = f"concurrence-{uuid.uuid4().hex[:12]}@exemple.org"
     account_id = await create_account(database_client, email=email)
     try:
@@ -376,7 +377,7 @@ async def committed_account(
 # ensures  : un seul réussit ; le second est traité comme une réutilisation et coupe la session,
 #            ce qui prouve que le verrou `FOR UPDATE` sérialise bien les deux transactions.
 async def test_concurrent_refreshes_are_serialized(
-    committed_account: tuple[httpx2.AsyncClient, str],
+    committed_account: tuple[OutboxClient, str],
 ) -> None:
     client, email = committed_account
     tokens = await login_tokens(client, email=email)

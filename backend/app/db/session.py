@@ -1,6 +1,7 @@
 """Moteur asynchrone, fabrique de sessions et session propre à chaque requête."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -81,3 +82,20 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
 
 
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
+
+
+# Fabrique de sessions pour les tâches d'arrière-plan : elles s'exécutent après la réponse, quand
+# la session de la requête est déjà fermée, et doivent donc ouvrir la leur.
+SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+
+# requires : l'application a été assemblée par `create_app`.
+# assigns  : rien.
+# ensures  : renvoie la fabrique de sessions de l'application ; les tests la remplacent pour que
+#            les tâches d'arrière-plan écrivent dans leur transaction annulée.
+def get_session_factory(request: Request) -> SessionFactory:
+    session_factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
+    return session_factory
+
+
+SessionFactoryDependency = Annotated[SessionFactory, Depends(get_session_factory)]

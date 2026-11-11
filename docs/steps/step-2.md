@@ -65,7 +65,7 @@ Ce script ne s'exécute qu'au **premier** démarrage d'un volume vide.
 
 ```bash
 scripts/generate-dev-env.sh
-docker compose --env-file .env.postgres up --detach --wait
+docker compose --env-file .env.compose up --detach --wait
 ```
 
 ## Étape 4 — Valider l'URL de connexion (`app/core/config.py`)

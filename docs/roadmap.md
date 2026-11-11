@@ -23,8 +23,8 @@ phase, pas avant.
 | 3 | Intégration continue | Terminée |
 | 4 | Comptes et mots de passe | Terminée |
 | 5 | Authentification et sessions | Terminée |
-| 6 | Protection contre les abus | En relecture |
-| 7 | Vérification d'e-mail et réinitialisation | À faire |
+| 6 | Protection contre les abus | Terminée |
+| 7 | Vérification d'e-mail et réinitialisation | En relecture |
 | 8 | Tâches | À faire |
 | 9 | Grille hebdomadaire | À faire |
 | 10 | Durcissement, RGPD et audit | À faire |
@@ -158,17 +158,17 @@ empreinte.
 **Objectif :** rendre les attaques automatisées coûteuses, sans permettre de bloquer un compte
 légitime.
 
-- [ ] Rédiger `docs/steps/step-6.md`
-- [ ] Ajouter Redis, protégé par mot de passe et non exposé
-- [ ] Implémenter un limiteur de débit à compteurs atomiques
-- [ ] Limiter connexion, inscription et réinitialisation par IP et par compte
-- [ ] Limiter le renouvellement (30/min) et les routes authentifiées (120/min) par utilisateur
-- [ ] Appliquer une temporisation progressive plutôt qu'un verrouillage définitif
-- [ ] Rejeter les requêtes d'authentification si Redis est indisponible
-- [ ] N'accepter `X-Forwarded-For` que depuis des proxys de confiance
-- [ ] Limiter la taille des corps de requête
-- [ ] Répondre `429` avec `Retry-After`
-- [ ] Tester le dépassement des limites, le contournement et la panne de Redis
+- [x] Rédiger `docs/steps/step-6.md`
+- [x] Ajouter Redis, protégé par mot de passe et non exposé
+- [x] Implémenter un limiteur de débit à compteurs atomiques
+- [x] Limiter connexion, inscription et réinitialisation par IP et par compte
+- [x] Limiter le renouvellement (30/min) et les routes authentifiées (120/min) par utilisateur
+- [x] Appliquer une temporisation progressive plutôt qu'un verrouillage définitif
+- [x] Rejeter les requêtes d'authentification si Redis est indisponible
+- [x] N'accepter `X-Forwarded-For` que depuis des proxys de confiance
+- [x] Limiter la taille des corps de requête
+- [x] Répondre `429` avec `Retry-After`
+- [x] Tester le dépassement des limites, le contournement et la panne de Redis
 
 **Terminé lorsque :** un test de force brute est bloqué sans verrouiller durablement la victime.
 

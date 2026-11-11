@@ -98,7 +98,7 @@ def test_refuses_migration_url_in_application_env_file(tmp_path: Path) -> None:
 
 
 # requires : le fichier `backend/.env.example` existe, `tmp_path` est accessible en écriture.
-# assigns  : crée une copie du modèle, retire la clé JWT et l'URL Redis de l'environnement.
+# assigns  : crée une copie du modèle, retire de l'environnement les réglages qu'il fournit.
 # ensures  : renvoie le contenu du modèle dont seuls les secrets choisis ont été remplacés.
 def fill_env_example(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, database: bool, jwt_secret: bool
@@ -106,6 +106,15 @@ def fill_env_example(
     # Sans cela, les valeurs fournies par `clean_environment` masqueraient celles du fichier.
     monkeypatch.delenv("TASKHANDLER_JWT_SECRET")
     monkeypatch.delenv("TASKHANDLER_REDIS_URL")
+    for name in (
+        "TASKHANDLER_SMTP_HOST",
+        "TASKHANDLER_SMTP_PORT",
+        "TASKHANDLER_SMTP_USERNAME",
+        "TASKHANDLER_SMTP_PASSWORD",
+        "TASKHANDLER_EMAIL_FROM",
+        "TASKHANDLER_FRONTEND_BASE_URL",
+    ):
+        monkeypatch.delenv(name)
     content = ENV_EXAMPLE.read_text(encoding="utf-8")
     if database:
         content = content.replace(ENV_EXAMPLE_PLACEHOLDER, UNUSED_CREDENTIAL)

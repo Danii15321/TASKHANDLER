@@ -5,7 +5,7 @@ from typing import Annotated, Literal, Self
 from email_validator import EmailNotValidError, validate_email
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-from app.core.tokens import REFRESH_TOKEN_LENGTH
+from app.core.tokens import OPAQUE_TOKEN_LENGTH
 from app.modules.auth.password_policy import (
     MAX_PASSWORD_LENGTH,
     ensure_password_unrelated_to_email,
@@ -70,13 +70,13 @@ LoginPassword = Annotated[
     Field(min_length=1, max_length=MAX_PASSWORD_LENGTH, repr=False),
     AfterValidator(normalize_password),
 ]
-# Format exact de `secrets.token_urlsafe(32)` : une valeur différente est refusée avant toute
-# requête en base.
-RefreshTokenValue = Annotated[
+# Format exact de `secrets.token_urlsafe(32)`, pour les jetons de renouvellement comme pour
+# ceux des e-mails : une valeur différente est refusée avant toute requête en base.
+OpaqueTokenValue = Annotated[
     str,
     Field(
-        min_length=REFRESH_TOKEN_LENGTH,
-        max_length=REFRESH_TOKEN_LENGTH,
+        min_length=OPAQUE_TOKEN_LENGTH,
+        max_length=OPAQUE_TOKEN_LENGTH,
         pattern=r"^[A-Za-z0-9_-]+$",
         repr=False,
     ),
@@ -97,7 +97,7 @@ class RefreshRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
-    refresh_token: RefreshTokenValue
+    refresh_token: OpaqueTokenValue
 
 
 class TokenResponse(BaseModel):
@@ -109,3 +109,36 @@ class TokenResponse(BaseModel):
     refresh_token: str = Field(repr=False)
     token_type: Literal["bearer"]
     expires_in: int
+
+
+class AcceptedResponse(BaseModel):
+    """Réponse `202` identique, que l'adresse soit connue ou non."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["accepted"]
+
+
+class VerifyEmailRequest(BaseModel):
+    """Corps de `POST /auth/verify-email` : le jeton lu par le frontend dans le lien."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    token: OpaqueTokenValue
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Corps de `POST /auth/password/forgot`."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    email: NormalizedEmail
+
+
+class ResetPasswordRequest(BaseModel):
+    """Corps de `POST /auth/password/reset` : le nouveau mot de passe suit la même politique."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    token: OpaqueTokenValue
+    new_password: NewPassword

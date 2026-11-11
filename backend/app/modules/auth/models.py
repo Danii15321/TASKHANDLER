@@ -27,6 +27,12 @@ REASON_ROTATED = "rotated"
 REASON_LOGOUT = "logout"
 REASON_LOGOUT_ALL = "logout_all"
 REASON_REUSE_DETECTED = "reuse_detected"
+REASON_PASSWORD_RESET = "password_reset"  # noqa: S105 — nom de raison, pas un secret
+
+# Usages des jetons à usage unique : un jeton de vérification ne peut pas réinitialiser un mot de
+# passe, et inversement.
+PURPOSE_EMAIL_VERIFICATION = "email_verification"
+PURPOSE_PASSWORD_RESET = "password_reset"  # noqa: S105 — nom d'usage, pas un secret
 
 
 class RefreshToken(Base):
@@ -60,7 +66,48 @@ class RefreshToken(Base):
             "(revoked_at IS NULL) = (revocation_reason IS NULL)", name="revocation_consistent"
         ),
         CheckConstraint(
-            "revocation_reason IN ('rotated', 'logout', 'logout_all', 'reuse_detected')",
+            "revocation_reason IN "
+            "('rotated', 'logout', 'logout_all', 'reuse_detected', 'password_reset')",
             name="revocation_reason_known",
         ),
+    )
+
+
+class OneTimeToken(Base):
+    """Jeton envoyé par e-mail : vérification d'adresse ou réinitialisation du mot de passe.
+
+    Seule son empreinte est stockée, il expire, et il ne sert qu'une fois (`used_at`).
+    """
+
+    __tablename__ = "one_time_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    purpose: Mapped[str] = mapped_column(String(30))
+    token_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("token_hash"),
+        CheckConstraint(
+            "purpose IN ('email_verification', 'password_reset')", name="purpose_known"
+        ),
+        CheckConstraint("token_hash ~ '^[0-9a-f]{64}$'", name="token_hash_sha256_hex"),
+        CheckConstraint("expires_at > created_at", name="expires_after_creation"),
+        # Durées maximales garanties par la base, quel que soit le réglage de l'application.
+        CheckConstraint(
+            "purpose <> 'password_reset' OR expires_at <= created_at + interval '30 minutes'",
+            name="password_reset_max_lifetime",
+        ),
+        CheckConstraint(
+            "purpose <> 'email_verification' OR expires_at <= created_at + interval '72 hours'",
+            name="email_verification_max_lifetime",
+        ),
+        CheckConstraint("used_at IS NULL OR used_at >= created_at", name="used_after_creation"),
     )

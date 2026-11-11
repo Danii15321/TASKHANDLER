@@ -15,12 +15,12 @@ from app.core.tokens import (
     ACCESS_TOKEN_TTL,
     JWT_AUDIENCE,
     JWT_ISSUER,
-    REFRESH_TOKEN_LENGTH,
+    OPAQUE_TOKEN_LENGTH,
     InvalidAccessTokenError,
     create_access_token,
     decode_access_token,
-    hash_refresh_token,
-    new_refresh_token,
+    hash_opaque_token,
+    new_opaque_token,
 )
 from tests.conftest import unreachable_database_url
 
@@ -202,15 +202,15 @@ def test_garbage_is_refused(token: str) -> None:
 # assigns  : rien.
 # ensures  : chaque jeton de renouvellement est unique, au format attendu, et stocké haché.
 def test_refresh_tokens_are_random_and_hashed() -> None:
-    tokens = {new_refresh_token() for _ in range(100)}
+    tokens = {new_opaque_token() for _ in range(100)}
 
     assert len(tokens) == 100
     for token in tokens:
-        assert len(token) == REFRESH_TOKEN_LENGTH
-        token_hash = hash_refresh_token(token)
+        assert len(token) == OPAQUE_TOKEN_LENGTH
+        token_hash = hash_opaque_token(token)
         assert len(token_hash) == 64
         assert token not in token_hash
-        assert hash_refresh_token(token) == token_hash
+        assert hash_opaque_token(token) == token_hash
 
 
 # requires : `secret` enfreint la règle de la clé de signature.

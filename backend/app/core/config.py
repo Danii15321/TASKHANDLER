@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Literal, Self
 from urllib.parse import unquote, urlsplit
 
-from pydantic import Field, IPvAnyNetwork, SecretStr, model_validator
+from email_validator import EmailNotValidError, validate_email
+from pydantic import AnyHttpUrl, Field, IPvAnyNetwork, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -177,6 +178,22 @@ class Settings(BaseSettings):
     register_email_limit_per_hour: int = Field(default=3, ge=1, le=100)
     refresh_user_limit_per_minute: int = Field(default=30, ge=1, le=1000)
     authenticated_user_limit_per_minute: int = Field(default=120, ge=1, le=10_000)
+    forgot_password_ip_limit_per_hour: int = Field(default=5, ge=1, le=1000)
+    forgot_password_email_limit_per_hour: int = Field(default=3, ge=1, le=100)
+    verification_resend_limit_per_hour: int = Field(default=3, ge=1, le=100)
+
+    # Envoi des e-mails. `tls` par défaut : le mode le plus strict quand rien n'est précisé.
+    smtp_host: str = Field(min_length=1, max_length=253)
+    smtp_port: int = Field(ge=1, le=65_535)
+    smtp_security: Literal["none", "starttls", "tls"] = "tls"
+    smtp_username: str | None = Field(default=None, max_length=256)
+    smtp_password: SecretStr | None = None
+    email_from: str = Field(max_length=254)
+    # Adresse du frontend : les liens envoyés par e-mail pointent vers lui, jamais vers l'API.
+    frontend_base_url: AnyHttpUrl
+    # Durées de validité des liens. La réinitialisation ne dépasse jamais 30 minutes.
+    email_verification_ttl_hours: int = Field(default=24, ge=1, le=72)
+    password_reset_ttl_minutes: int = Field(default=30, ge=5, le=30)
 
     # requires : les champs ont passé leur validation individuelle.
     # assigns  : rien.
@@ -211,6 +228,29 @@ class Settings(BaseSettings):
         )
         if self.refresh_token_idle_days > self.session_max_days:
             raise ValueError("l'inactivité permise dépasse la durée maximale d'une session")
+        return self
+
+    # requires : les champs ont passé leur validation individuelle.
+    # assigns  : rien.
+    # ensures  : renvoie la configuration si l'envoi d'e-mails est sûr ; sinon lève `ValueError`.
+    #            Hors développement, SMTP doit être chiffré et authentifié, et les liens en HTTPS.
+    @model_validator(mode="after")
+    def _check_email_delivery(self) -> Self:
+        try:
+            validate_email(self.email_from, check_deliverability=False)
+        except EmailNotValidError:
+            raise ValueError("adresse d'expédition invalide") from None
+        # Les liens ajoutent `#token=…` à cette adresse : une requête ou un fragment déjà présents
+        # produiraient un lien ambigu.
+        if self.frontend_base_url.query or self.frontend_base_url.fragment:
+            raise ValueError("l'adresse du frontend ne doit contenir ni requête ni fragment")
+        if self.environment not in _ENVIRONMENTS_WITHOUT_DATABASE_TLS:
+            if self.smtp_security == "none":
+                raise ValueError("SMTP doit être chiffré dans cet environnement")
+            if not self.smtp_username or self.smtp_password is None:
+                raise ValueError("SMTP doit être authentifié dans cet environnement")
+            if self.frontend_base_url.scheme != "https":
+                raise ValueError("les liens doivent être en HTTPS dans cet environnement")
         return self
 
     # requires : rien.

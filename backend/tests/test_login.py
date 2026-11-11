@@ -12,11 +12,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.passwords import PasswordHasherService, PasswordHashingBusyError
-from app.core.tokens import hash_refresh_token
+from app.core.tokens import hash_opaque_token
 from tests.conftest import (
     LOGIN_URL,
     TEST_PASSPHRASE,
     LogReader,
+    OutboxClient,
     create_account,
     login_tokens,
 )
@@ -70,7 +71,7 @@ def count_argon2_operations(
 # assigns  : crée un compte et une session dans une transaction annulée à la fin du test.
 # ensures  : la connexion renvoie une paire de jetons conforme, jamais mise en cache.
 async def test_login_returns_tokens(
-    isolated_client: httpx2.AsyncClient, db_session: AsyncSession
+    isolated_client: OutboxClient, db_session: AsyncSession
 ) -> None:
     account_id = await create_account(isolated_client)
 
@@ -91,7 +92,7 @@ async def test_login_returns_tokens(
 # assigns  : crée un compte et une session dans une transaction annulée à la fin du test.
 # ensures  : la base ne contient que l'empreinte du jeton de renouvellement, jamais sa valeur.
 async def test_refresh_token_is_stored_hashed(
-    isolated_client: httpx2.AsyncClient, db_session: AsyncSession
+    isolated_client: OutboxClient, db_session: AsyncSession
 ) -> None:
     await create_account(isolated_client)
     refresh_token = (await login_tokens(isolated_client))["refresh_token"]
@@ -99,7 +100,7 @@ async def test_refresh_token_is_stored_hashed(
     rows = (await db_session.execute(text("SELECT * FROM refresh_tokens"))).mappings().all()
 
     assert len(rows) == 1
-    assert rows[0]["token_hash"] == hash_refresh_token(refresh_token)
+    assert rows[0]["token_hash"] == hash_opaque_token(refresh_token)
     assert refresh_token not in str(dict(rows[0]))
 
 
@@ -109,7 +110,7 @@ async def test_refresh_token_is_stored_hashed(
 #            exactement une vérification argon2id chacun : rien ne distingue les trois cas.
 async def test_failures_are_indistinguishable(
     database_app: FastAPI,
-    isolated_client: httpx2.AsyncClient,
+    isolated_client: OutboxClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -118,6 +119,9 @@ async def test_failures_are_indistinguishable(
     await db_session.execute(
         text("UPDATE users SET is_active = false WHERE email = 'inactif@exemple.org'")
     )
+    # Validée comme une vraie modification : une route en erreur annule sa transaction, et
+    # emporterait sinon cette préparation (elle reste annulée à la fin du test).
+    await db_session.commit()
     hasher: PasswordHasherService = database_app.state.password_hasher
     await hasher.prepare()
     operations = count_argon2_operations(hasher, monkeypatch)
@@ -141,7 +145,7 @@ async def test_failures_are_indistinguishable(
 # requires : PostgreSQL est démarré et migré.
 # assigns  : crée un compte et une session dans une transaction annulée à la fin du test.
 # ensures  : l'adresse est normalisée comme à l'inscription : casse et espaces sont ignorés.
-async def test_login_normalizes_email(isolated_client: httpx2.AsyncClient) -> None:
+async def test_login_normalizes_email(isolated_client: OutboxClient) -> None:
     await create_account(isolated_client)
 
     response = await attempt_login(isolated_client, email="  ALICE@Exemple.org ")
@@ -152,7 +156,7 @@ async def test_login_normalizes_email(isolated_client: httpx2.AsyncClient) -> No
 # requires : PostgreSQL est démarré et migré.
 # assigns  : crée un compte et une session dans une transaction annulée à la fin du test.
 # ensures  : le mot de passe est normalisé comme à l'inscription (NFKC).
-async def test_login_normalizes_password(isolated_client: httpx2.AsyncClient) -> None:
+async def test_login_normalizes_password(isolated_client: OutboxClient) -> None:
     fullwidth = "".join(chr(ord(letter) + 0xFEE0) for letter in "violet") + " ruisseau lanterne"
     await create_account(isolated_client, password=fullwidth)
 
@@ -165,11 +169,14 @@ async def test_login_normalizes_password(isolated_client: httpx2.AsyncClient) ->
 # assigns  : insère un compte haché avec des paramètres faibles, puis se connecte.
 # ensures  : l'empreinte est remplacée par une empreinte aux paramètres actuels, toujours valide.
 async def test_login_upgrades_outdated_hash(
-    isolated_client: httpx2.AsyncClient, db_session: AsyncSession
+    isolated_client: OutboxClient, db_session: AsyncSession
 ) -> None:
     weak_hash = PasswordHasher(time_cost=1, memory_cost=8192, parallelism=1).hash(TEST_PASSPHRASE)
     await db_session.execute(
-        text("INSERT INTO users (email, password_hash) VALUES (:email, :hash)"),
+        text(
+            "INSERT INTO users (email, password_hash, email_verified_at) "
+            "VALUES (:email, :hash, now())"
+        ),
         {"email": EMAIL, "hash": weak_hash},
     )
 
@@ -201,7 +208,7 @@ async def test_login_upgrades_outdated_hash(
     ],
 )
 async def test_invalid_login_payload_is_refused(
-    isolated_client: httpx2.AsyncClient, payload: dict[str, object]
+    isolated_client: OutboxClient, payload: dict[str, object]
 ) -> None:
     response = await isolated_client.post(LOGIN_URL, json=payload)
 
@@ -214,7 +221,7 @@ async def test_invalid_login_payload_is_refused(
 # ensures  : les journaux d'audit enregistrent succès et échecs, sans mot de passe, sans jeton et
 #            sans adresse e-mail.
 async def test_login_is_audited_without_secrets(
-    isolated_client: httpx2.AsyncClient, read_logs: LogReader
+    isolated_client: OutboxClient, read_logs: LogReader
 ) -> None:
     account_id = await create_account(isolated_client)
     tokens = await login_tokens(isolated_client)
@@ -222,7 +229,11 @@ async def test_login_is_audited_without_secrets(
     await attempt_login(isolated_client, email="inconnu@exemple.org")
 
     events = read_logs()
-    audit = [event for event in events if event["logger"] == "app.audit"]
+    audit = [
+        event
+        for event in events
+        if event["logger"] == "app.audit" and str(event["message"]).startswith("login_")
+    ]
     assert [event["message"] for event in audit] == [
         "login_succeeded",
         "login_failed",
@@ -240,7 +251,7 @@ async def test_login_is_audited_without_secrets(
 # ensures  : un serveur saturé répond 503 avec `Retry-After`, sans ouvrir de session.
 async def test_saturated_hashing_returns_service_unavailable(
     database_app: FastAPI,
-    isolated_client: httpx2.AsyncClient,
+    isolated_client: OutboxClient,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

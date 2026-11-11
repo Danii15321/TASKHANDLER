@@ -1,17 +1,19 @@
-"""Règles métier de l'authentification : inscription, connexion et sessions."""
+"""Règles métier de l'authentification : connexion et sessions.
+
+Les parcours par e-mail (inscription, vérification, réinitialisation) sont dans `account_flows`.
+"""
 
 import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.passwords import PasswordHasherService
 from app.core.rate_limit import RateLimiter
-from app.core.tokens import create_access_token, hash_refresh_token, new_refresh_token
+from app.core.tokens import create_access_token, hash_opaque_token, new_opaque_token
 from app.modules.auth.limits import (
     LOGIN_BACKOFF_SCOPE,
     login_account_limit,
@@ -33,12 +35,11 @@ from app.modules.auth.repository import (
     revoke_refresh_token,
     revoke_session,
 )
-from app.modules.users.models import EMAIL_UNIQUE_INDEX, User
+from app.modules.users.models import User
 from app.modules.users.repository import (
     get_active_user,
     get_user_by_email,
     increment_token_version,
-    insert_user,
     update_password_hash,
 )
 
@@ -47,12 +48,20 @@ from app.modules.users.repository import (
 audit_logger = logging.getLogger("app.audit")
 
 
-class EmailAlreadyRegisteredError(Exception):
-    """L'adresse appartient déjà à un compte."""
-
-
 class InvalidCredentialsError(Exception):
     """Adresse inconnue, mot de passe faux ou compte inactif : la cause n'est jamais exposée."""
+
+
+class EmailNotVerifiedError(Exception):
+    """Mot de passe correct, mais adresse jamais vérifiée : levée seulement après la vérification
+    du mot de passe, donc visible uniquement de quelqu'un qui le connaît déjà."""
+
+    # requires : `user_id` désigne un compte actif dont l'adresse n'est pas vérifiée.
+    # assigns  : rien.
+    # ensures  : l'exception porte l'identifiant du compte, pour renvoyer un lien de vérification.
+    def __init__(self, user_id: uuid.UUID) -> None:
+        super().__init__("adresse non vérifiée")
+        self.user_id = user_id
 
 
 class InvalidRefreshTokenError(Exception):
@@ -65,38 +74,6 @@ class IssuedTokens:
 
     access_token: str = field(repr=False)
     refresh_token: str = field(repr=False)
-
-
-# requires : `error` provient d'une écriture dans `users`.
-# assigns  : rien.
-# ensures  : renvoie `True` seulement si l'erreur vient de l'unicité de l'adresse.
-def _is_email_conflict(error: IntegrityError) -> bool:
-    # asyncpg conserve le nom de la contrainte violée dans l'exception d'origine.
-    driver_error = error.orig.__cause__ if error.orig is not None else None
-    return getattr(driver_error, "constraint_name", None) == EMAIL_UNIQUE_INDEX
-
-
-# requires : `email` est normalisé et `password` a passé la politique de mot de passe.
-# assigns  : insère le compte et valide la transaction.
-# ensures  : renvoie le compte créé ; lève `EmailAlreadyRegisteredError` si l'adresse existe déjà,
-#            ou `PasswordHashingBusyError` si le serveur est saturé.
-async def register_user(
-    session: AsyncSession, hasher: PasswordHasherService, *, email: str, password: str
-) -> User:
-    # Le hachage précède l'insertion : une adresse déjà inscrite prend le même temps qu'une
-    # nouvelle. La réponse 409 révèle encore son existence, ce que la phase 7 corrigera.
-    password_hash = await hasher.hash(password)
-    try:
-        user = await insert_user(session, email=email, password_hash=password_hash)
-        await session.commit()
-    except IntegrityError as error:
-        await session.rollback()
-        if _is_email_conflict(error):
-            # La vérification repose sur l'index unique, et non sur une lecture préalable : deux
-            # inscriptions simultanées ne peuvent pas passer toutes les deux.
-            raise EmailAlreadyRegisteredError from None
-        raise
-    return user
 
 
 # requires : `email` est normalisé, `client_ip` vient de `get_client_ip`.
@@ -113,7 +90,8 @@ async def guard_registration(
 # requires : `email` est normalisé, `password` est normalisé en NFKC.
 # assigns  : met à niveau l'empreinte si ses paramètres sont dépassés, sans valider.
 # ensures  : renvoie le compte si les identifiants sont valides et le compte actif ; sinon lève
-#            `InvalidCredentialsError`. Chaque cas exécute exactement une vérification argon2id,
+#            `InvalidCredentialsError`, ou `EmailNotVerifiedError` si seule la vérification de
+#            l'adresse manque. Chaque cas exécute exactement une vérification argon2id,
 #            pour que le temps de réponse ne révèle pas l'existence du compte.
 async def authenticate(
     session: AsyncSession, hasher: PasswordHasherService, *, email: str, password: str
@@ -136,6 +114,11 @@ async def authenticate(
             "login_failed", extra={"reason": "inactive_account", "user_id": str(user.id)}
         )
         raise InvalidCredentialsError
+    if user.email_verified_at is None:
+        audit_logger.info(
+            "login_failed", extra={"reason": "email_not_verified", "user_id": str(user.id)}
+        )
+        raise EmailNotVerifiedError(user.id)
 
     # Seul moment où le mot de passe en clair est disponible : c'est ici que l'on remplace une
     # empreinte calculée avec des paramètres plus faibles que ceux d'aujourd'hui.
@@ -158,14 +141,14 @@ async def _issue_tokens(
     session_expires_at: datetime,
     now: datetime,
 ) -> IssuedTokens:
-    refresh_token = new_refresh_token()
+    refresh_token = new_opaque_token()
     # L'inactivité prolonge la session, mais jamais au-delà de sa limite absolue.
     expires_at = min(now + timedelta(days=settings.refresh_token_idle_days), session_expires_at)
     await insert_refresh_token(
         session,
         user_id=user_id,
         family_id=family_id,
-        token_hash=hash_refresh_token(refresh_token),
+        token_hash=hash_opaque_token(refresh_token),
         expires_at=expires_at,
         session_expires_at=session_expires_at,
     )
@@ -217,7 +200,7 @@ async def rotate_refresh_token(
 ) -> IssuedTokens:
     # Le verrou `FOR UPDATE` est tenu jusqu'au commit : un second renouvellement simultané du
     # même jeton attend, puis voit ce jeton révoqué, et il est traité comme une réutilisation.
-    stored = await lock_refresh_token(session, hash_refresh_token(refresh_token))
+    stored = await lock_refresh_token(session, hash_opaque_token(refresh_token))
     if stored is None:
         raise InvalidRefreshTokenError
 
@@ -285,7 +268,8 @@ async def close_all_sessions(session: AsyncSession, *, user_id: uuid.UUID) -> No
 # requires : `email` et `password` sont normalisés, `client_ip` vient de `get_client_ip`.
 # assigns  : met à jour les compteurs et la temporisation ; ouvre une session en cas de succès.
 # ensures  : renvoie une paire de jetons ; lève `InvalidCredentialsError` si l'authentification
-#            échoue, ou une erreur du limiteur si une limite ou la temporisation s'applique.
+#            échoue, `EmailNotVerifiedError` si l'adresse n'est pas vérifiée, ou une erreur du
+#            limiteur si une limite ou la temporisation s'applique.
 async def log_in(
     session: AsyncSession,
     hasher: PasswordHasherService,
@@ -308,6 +292,10 @@ async def log_in(
     except InvalidCredentialsError:
         # Le compte inconnu est compté comme les autres : la temporisation ne révèle rien.
         await limiter.record_failure(LOGIN_BACKOFF_SCOPE, pair)
+        raise
+    except EmailNotVerifiedError:
+        # Le mot de passe était correct : ce n'est pas une tentative de force brute.
+        await limiter.reset_failures(LOGIN_BACKOFF_SCOPE, pair)
         raise
     await limiter.reset_failures(LOGIN_BACKOFF_SCOPE, pair)
     return await open_session(session, settings, user, now=now)

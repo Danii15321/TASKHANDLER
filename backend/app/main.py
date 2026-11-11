@@ -11,6 +11,7 @@ from fastapi import APIRouter, FastAPI
 
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings
+from app.core.email import SmtpEmailSender
 from app.core.errors import register_exception_handlers
 from app.core.logging_config import configure_logging
 from app.core.middleware import RequestContextMiddleware
@@ -65,6 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         queue_timeout_seconds=resolved_settings.password_hash_queue_timeout_seconds,
     )
 
+    app.state.email_sender = SmtpEmailSender(resolved_settings)
     app.state.redis = create_redis_client(resolved_settings)
     app.state.rate_limiter = RateLimiter(
         app.state.redis, key_prefix=resolved_settings.rate_limit_key_prefix

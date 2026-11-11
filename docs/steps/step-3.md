@@ -113,7 +113,7 @@ La tâche `tests` réutilise les fichiers du développement au lieu de redéfini
 
 ```yaml
 - run: scripts/generate-dev-env.sh
-- run: docker compose --env-file .env.postgres up --detach --wait
+- run: docker compose --env-file .env.compose up --detach --wait
 - run: uv run --locked alembic upgrade head
 ```
 

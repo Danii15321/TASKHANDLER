@@ -14,7 +14,7 @@ from starlette.types import Message, Receive, Scope, Send
 
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings
-from app.db.session import get_session
+from app.db.session import SessionFactory, get_session, get_session_factory
 from app.main import create_app
 from app.modules.auth.dependencies import AUTHENTICATED_DEPENDENCIES
 from app.modules.auth.limits import TOO_MANY_REQUESTS_DETAIL
@@ -26,7 +26,11 @@ from tests.conftest import (
     TEST_PASSPHRASE,
     DatabaseTestSettings,
     LogReader,
+    OutboxClient,
+    RecordingEmailSender,
     bearer,
+    borrowing_factory,
+    create_account,
     unique_rate_limit_prefix,
     unreachable_redis_url,
 )
@@ -64,12 +68,18 @@ async def build_app(
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncIterator[AppBuilder]:
     created: list[FastAPI] = []
+    factory = borrowing_factory(db_session)
 
     # requires : rien.
-    # assigns  : rien.
-    # ensures  : fournit la session isolée du test à la place d'une nouvelle session.
+    # assigns  : annule la transaction en cours si la route lève une erreur.
+    # ensures  : fournit la session isolée du test à la place d'une nouvelle session, avec la même
+    #            annulation automatique que `get_session` en production.
     async def use_test_session() -> AsyncIterator[AsyncSession]:
-        yield db_session
+        try:
+            yield db_session
+        except Exception:
+            await db_session.rollback()
+            raise
 
     # requires : voir `AppBuilder.__call__`.
     # assigns  : voir `AppBuilder.__call__`.
@@ -87,6 +97,8 @@ async def build_app(
             )
         )
         application.dependency_overrides[get_session] = use_test_session
+        application.dependency_overrides[get_session_factory] = lambda: factory
+        application.state.email_sender = RecordingEmailSender()
         created.append(application)
         return application
 
@@ -115,12 +127,18 @@ def healthy_and_degraded_apps(build_app: AppBuilder) -> tuple[FastAPI, FastAPI]:
 
 # requires : `application` est assemblée.
 # assigns  : rien.
-# ensures  : renvoie un client dont toutes les requêtes viennent de l'IP `ip`.
-def client_from(application: FastAPI, ip: str) -> httpx2.AsyncClient:
+# ensures  : renvoie un client dont toutes les requêtes viennent de l'IP `ip`, et qui voit les
+#            e-mails envoyés par l'application.
+def client_from(application: FastAPI, ip: str) -> OutboxClient:
     transport = httpx2.ASGITransport(
         app=application, raise_app_exceptions=False, client=(ip, 50_000)
     )
-    return httpx2.AsyncClient(transport=transport, base_url="http://test")
+    factory: SessionFactory = application.dependency_overrides[get_session_factory]()
+    return OutboxClient(
+        transport=transport,
+        outbox=application.state.email_sender,
+        session_factory=factory,
+    )
 
 
 # requires : `client` est relié à l'application de test.
@@ -137,11 +155,10 @@ async def attempt(
 
 
 # requires : `client` est relié à l'application de test.
-# assigns  : crée le compte de la victime.
-# ensures  : le compte existe ; échoue sinon.
-async def register_victim(client: httpx2.AsyncClient) -> None:
-    response = await client.post(REGISTER_URL, json={"email": EMAIL, "password": TEST_PASSPHRASE})
-    assert response.status_code == HTTPStatus.CREATED, response.text
+# assigns  : crée le compte de la victime et vérifie son adresse.
+# ensures  : le compte existe et peut se connecter ; échoue sinon.
+async def register_victim(client: OutboxClient) -> None:
+    await create_account(client, email=EMAIL, password=TEST_PASSPHRASE)
 
 
 # requires : `response` est un refus pour cause de limite.
@@ -258,7 +275,8 @@ async def test_trusted_proxy_separates_clients(build_app: AppBuilder) -> None:
 
 # requires : PostgreSQL et Redis sont démarrés.
 # assigns  : envoie des inscriptions, dans une transaction annulée à la fin.
-# ensures  : au-delà de 3 demandes par adresse, l'inscription est refusée, même pour un doublon.
+# ensures  : au-delà de 3 demandes par adresse, l'inscription est refusée ; avant, la réponse est
+#            la même `202`, que l'adresse soit déjà inscrite ou non.
 async def test_registration_is_limited_per_email(build_app: AppBuilder) -> None:
     application = build_app()
     statuses = []
@@ -267,7 +285,7 @@ async def test_registration_is_limited_per_email(build_app: AppBuilder) -> None:
             body = {"email": EMAIL, "password": TEST_PASSPHRASE}
             statuses.append((await client.post(REGISTER_URL, json=body)).status_code)
 
-    assert statuses[:3] == [HTTPStatus.CREATED, HTTPStatus.CONFLICT, HTTPStatus.CONFLICT]
+    assert statuses[:3] == [HTTPStatus.ACCEPTED] * 3
     assert statuses[3] == HTTPStatus.TOO_MANY_REQUESTS
 
 
@@ -279,7 +297,7 @@ async def test_registration_is_limited_per_ip(build_app: AppBuilder) -> None:
     async with client_from(application, ATTACKER_IP) as client:
         for index in range(5):
             body = {"email": f"masse{index}@exemple.org", "password": TEST_PASSPHRASE}
-            assert (await client.post(REGISTER_URL, json=body)).status_code == HTTPStatus.CREATED
+            assert (await client.post(REGISTER_URL, json=body)).status_code == HTTPStatus.ACCEPTED
         body = {"email": "masse5@exemple.org", "password": TEST_PASSPHRASE}
         assert_rate_limited(await client.post(REGISTER_URL, json=body), max_retry_after=3600)
 
