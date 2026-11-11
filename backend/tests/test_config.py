@@ -1,5 +1,6 @@
 """Tests de la configuration validée au démarrage."""
 
+import secrets
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,9 @@ from tests.conftest import UNUSED_CREDENTIAL, unreachable_database_url
 
 ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 ENV_EXAMPLE_PLACEHOLDER = "remplacer-par-un-secret-aleatoire"
+# La clé JWT est laissée vide dans le modèle : une valeur d'exemple serait prise pour un secret
+# par gitleaks, et une clé vide est de toute façon refusée au démarrage.
+ENV_EXAMPLE_JWT_LINE = "TASKHANDLER_JWT_SECRET=\n"
 DATABASE_URL_VARIABLE = "TASKHANDLER_DATABASE_URL"
 TLS_QUERY = "?ssl=verify-full"
 
@@ -93,23 +97,56 @@ def test_refuses_migration_url_in_application_env_file(tmp_path: Path) -> None:
         Settings(database_url=url_for_role(APP_DATABASE_ROLE), _env_file=env_file)
 
 
-# requires : le fichier `backend/.env.example` existe.
-# assigns  : rien.
-# ensures  : les valeurs factices du modèle empêchent réellement le démarrage.
-def test_env_example_placeholder_is_refused() -> None:
+# requires : le fichier `backend/.env.example` existe, `tmp_path` est accessible en écriture.
+# assigns  : crée une copie du modèle, retire de l'environnement les réglages qu'il fournit.
+# ensures  : renvoie le contenu du modèle dont seuls les secrets choisis ont été remplacés.
+def fill_env_example(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, database: bool, jwt_secret: bool
+) -> Path:
+    # Sans cela, les valeurs fournies par `clean_environment` masqueraient celles du fichier.
+    monkeypatch.delenv("TASKHANDLER_JWT_SECRET")
+    monkeypatch.delenv("TASKHANDLER_REDIS_URL")
+    for name in (
+        "TASKHANDLER_SMTP_HOST",
+        "TASKHANDLER_SMTP_PORT",
+        "TASKHANDLER_SMTP_USERNAME",
+        "TASKHANDLER_SMTP_PASSWORD",
+        "TASKHANDLER_EMAIL_FROM",
+        "TASKHANDLER_FRONTEND_BASE_URL",
+    ):
+        monkeypatch.delenv(name)
+    content = ENV_EXAMPLE.read_text(encoding="utf-8")
+    if database:
+        content = content.replace(ENV_EXAMPLE_PLACEHOLDER, UNUSED_CREDENTIAL)
+    if jwt_secret:
+        content = content.replace(
+            ENV_EXAMPLE_JWT_LINE, f"TASKHANDLER_JWT_SECRET={secrets.token_hex(32)}\n"
+        )
+    filled_file = tmp_path / ".env"
+    filled_file.write_text(content, encoding="utf-8")
+    return filled_file
+
+
+# requires : `database` et `jwt_secret` ne valent pas tous les deux `True`.
+# assigns  : crée une copie temporaire du modèle.
+# ensures  : chaque valeur factice du modèle, à elle seule, empêche réellement le démarrage.
+@pytest.mark.parametrize(("database", "jwt_secret"), [(False, False), (True, False), (False, True)])
+def test_env_example_placeholders_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, database: bool, jwt_secret: bool
+) -> None:
+    env_file = fill_env_example(tmp_path, monkeypatch, database=database, jwt_secret=jwt_secret)
+
     with pytest.raises(ValidationError):
-        Settings(_env_file=ENV_EXAMPLE)
+        Settings(_env_file=env_file)
 
 
 # requires : le fichier `backend/.env.example` existe, `tmp_path` est accessible en écriture.
 # assigns  : crée une copie temporaire du modèle.
-# ensures  : le modèle est complet : seul son secret factice reste à remplacer.
-def test_env_example_is_complete(tmp_path: Path) -> None:
-    filled_file = tmp_path / ".env"
-    content = ENV_EXAMPLE.read_text(encoding="utf-8")
-    filled_file.write_text(content.replace(ENV_EXAMPLE_PLACEHOLDER, UNUSED_CREDENTIAL), "utf-8")
+# ensures  : le modèle est complet : seuls ses secrets factices restent à remplacer.
+def test_env_example_is_complete(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env_file = fill_env_example(tmp_path, monkeypatch, database=True, jwt_secret=True)
 
-    assert Settings(_env_file=filled_file).environment == "development"
+    assert Settings(_env_file=env_file).environment == "development"
 
 
 # requires : `bad_url` enfreint une règle de sécurité de la configuration.

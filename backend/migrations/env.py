@@ -9,7 +9,7 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import MigrationSettings
 from app.core.logging_config import configure_logging
-from app.db.base import Base
+from app.db.models import metadata
 
 config = context.config
 
@@ -39,7 +39,7 @@ def _resolve_database_url() -> str:
 def _apply_migrations(connection: Connection) -> None:
     context.configure(
         connection=connection,
-        target_metadata=Base.metadata,
+        target_metadata=metadata,
         compare_type=True,
         compare_server_default=True,
     )

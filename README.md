@@ -5,7 +5,7 @@ TaskHandler est une application web qui permet de **planifier ses tâches** dans
 Ce dépôt couvre pour l'instant uniquement le **backend** : une API REST construite avec FastAPI et
 PostgreSQL. Le frontend sera traité plus tard.
 
-> **État du projet :** socle et base de données en place, aucune fonctionnalité métier. L'avancement réel se lit dans la
+> **État du projet :** API complète et durcie (compte, RGPD, RLS, audit OWASP) ; déploiement à venir. L'avancement réel se lit dans la
 > [roadmap](docs/roadmap.md). Tout ce qui suit décrit la **cible** du projet.
 
 ---
@@ -53,7 +53,7 @@ Frontend, tâches récurrentes, partage entre utilisateurs, notifications, authe
 | Configuration | pydantic-settings | Configuration validée au démarrage |
 | Anti-abus | Redis | Compteurs partagés entre processus |
 | Tests | pytest + httpx2 sur un vrai PostgreSQL | Comportement identique à la production |
-| Qualité | ruff, mypy (mode strict), pre-commit | Erreurs détectées avant la relecture |
+| Qualité | ruff, mypy (mode strict), pre-commit, GitHub Actions | Erreurs détectées avant la relecture |
 | Sécurité outillée | pip-audit, gitleaks, règles Bandit de ruff | Dépendances, secrets, code |
 | Dépendances | uv + fichier de verrouillage | Installations reproductibles |
 
@@ -69,6 +69,7 @@ Le code est organisé par **domaine métier**, et chaque domaine est découpé e
 .
 ├── README.md
 ├── CLAUDE.md
+├── .github/workflows/       # Intégration continue
 ├── docs/
 │   ├── roadmap.md           # Phases et tâches à cocher
 │   └── steps/step-x.md      # Guide pédagogique détaillé de chaque phase
@@ -103,7 +104,7 @@ Dans chaque module, les responsabilités sont séparées :
 | Table | Colonnes principales | Rôle |
 |---|---|---|
 | `users` | `id`, `email` (unique), `password_hash`, `email_verified_at`, `token_version`, `is_active` | Comptes |
-| `refresh_tokens` | `id`, `user_id`, `family_id`, `token_hash`, `expires_at`, `revoked_at` | Sessions renouvelables |
+| `refresh_tokens` | `id`, `user_id`, `family_id`, `token_hash`, `expires_at`, `session_expires_at`, `revoked_at`, `revocation_reason` | Sessions renouvelables |
 | `one_time_tokens` | `id`, `user_id`, `purpose`, `token_hash`, `expires_at`, `used_at` | Vérification d'e-mail, réinitialisation |
 | `tasks` | `id`, `user_id`, `title`, `description`, `priority` | Tâches |
 | `task_days` | `task_id`, `user_id`, `day`, `start_hour`, `duration_hours`, `status`, `completed_at` — clé primaire (`task_id`, `day`) | Association N-N : placement d'une tâche sur un jour |
@@ -129,7 +130,7 @@ contraire.
 | Session | `POST /auth/logout`, `POST /auth/logout-all` |
 | Compte | `GET`, `DELETE /users/me`, `POST /users/me/password`, `GET /users/me/export` |
 | Tâches | `GET`, `POST /tasks`, `GET`, `PATCH`, `DELETE /tasks/{id}` |
-| Grille | `GET /planning?start=…&end=…` (sans description), `PUT`, `DELETE /tasks/{id}/days/{day}` |
+| Grille | `GET /planning?start=…&end=…` (sans description), `PUT`, `PATCH`, `DELETE /tasks/{id}/days/{day}` |
 
 Les erreurs suivent le format `application/problem+json` (RFC 9457).
 
@@ -162,7 +163,7 @@ Le projet avance **phase par phase**, sans scaffold global.
 2. Chaque phase dispose d'un guide `docs/steps/step-x.md`, assez pédagogique pour qu'un humain
    puisse écrire le code lui-même.
 3. Le code, les dépendances et l'environnement n'apparaissent que lorsqu'une phase les requiert.
-4. Aucun commit n'est effectué sans autorisation explicite.
+4. Aucun commit sans autorisation explicite ; `main` n'évolue que par pull request depuis `daniel_dev`.
 
 Toute fonction est abondamment commentée et précédée des étiquettes `requires`, `assigns` et
 `ensures`, décrites en français :
@@ -187,7 +188,7 @@ Prérequis : Git, Docker, OpenSSL et [uv](https://docs.astral.sh/uv/). Depuis `b
 uv sync --locked
 uv run --locked pre-commit install
 scripts/generate-dev-env.sh
-docker compose --env-file .env.postgres up --detach --wait
+docker compose --env-file .env.compose up --detach --wait
 uv run --locked alembic upgrade head
 ```
 
@@ -195,5 +196,5 @@ Pour lancer les tests, puis l'API en développement, toujours depuis `backend/` 
 
 ```bash
 uv run --locked pytest
-uv run --locked uvicorn app.main:create_app --factory --no-server-header
+uv run --locked uvicorn app.main:create_app --factory --no-server-header --no-proxy-headers
 ```

@@ -19,15 +19,15 @@ phase, pas avant.
 |---|---|---|
 | 0 | Dépôt et outillage qualité | Terminée |
 | 1 | Application FastAPI minimale | Terminée |
-| 2 | PostgreSQL et migrations | En relecture |
-| 3 | Intégration continue | À faire |
-| 4 | Comptes et mots de passe | À faire |
-| 5 | Authentification et sessions | À faire |
-| 6 | Protection contre les abus | À faire |
-| 7 | Vérification d'e-mail et réinitialisation | À faire |
-| 8 | Tâches | À faire |
-| 9 | Grille hebdomadaire | À faire |
-| 10 | Durcissement, RGPD et audit | À faire |
+| 2 | PostgreSQL et migrations | Terminée |
+| 3 | Intégration continue | Terminée |
+| 4 | Comptes et mots de passe | Terminée |
+| 5 | Authentification et sessions | Terminée |
+| 6 | Protection contre les abus | Terminée |
+| 7 | Vérification d'e-mail et réinitialisation | Terminée |
+| 8 | Tâches | Terminée |
+| 9 | Grille hebdomadaire | Terminée |
+| 10 | Durcissement, RGPD et audit | En relecture |
 | 11 | Conteneurisation et déploiement | À faire |
 
 ---
@@ -75,17 +75,17 @@ journaux.
 **Objectif :** une base versionnée, accessible avec le moindre privilège et testée en conditions
 réelles.
 
-- [ ] Rédiger `docs/steps/step-2.md`
-- [ ] Ajouter PostgreSQL via Docker Compose pour le développement
-- [ ] Créer un rôle de migration (DDL) et un rôle applicatif (DML uniquement)
-- [ ] Installer SQLAlchemy asynchrone et asyncpg
-- [ ] Configurer moteur, pool de connexions et délais d'expiration des requêtes
-- [ ] Fournir la session par requête, avec annulation automatique en cas d'erreur
-- [ ] Définir la convention de nommage des contraintes
-- [ ] Initialiser Alembic avec le rôle de migration
-- [ ] Exposer `GET /health/ready`, sans détail sur l'infrastructure
-- [ ] Créer l'infrastructure de test sur un vrai PostgreSQL, isolée à chaque test
-- [ ] Vérifier que le rôle applicatif ne peut pas modifier le schéma
+- [x] Rédiger `docs/steps/step-2.md`
+- [x] Ajouter PostgreSQL via Docker Compose pour le développement
+- [x] Créer un rôle de migration (DDL) et un rôle applicatif (DML uniquement)
+- [x] Installer SQLAlchemy asynchrone et asyncpg
+- [x] Configurer moteur, pool de connexions et délais d'expiration des requêtes
+- [x] Fournir la session par requête, avec annulation automatique en cas d'erreur
+- [x] Définir la convention de nommage des contraintes
+- [x] Initialiser Alembic avec le rôle de migration
+- [x] Exposer `GET /health/ready`, sans détail sur l'infrastructure
+- [x] Créer l'infrastructure de test sur un vrai PostgreSQL, isolée à chaque test
+- [x] Vérifier que le rôle applicatif ne peut pas modifier le schéma
 
 **Terminé lorsque :** une migration s'applique puis s'annule proprement, et un test prouve que le
 rôle applicatif ne peut pas exécuter `DROP TABLE`.
@@ -96,13 +96,14 @@ rôle applicatif ne peut pas exécuter `DROP TABLE`.
 
 **Objectif :** aucun changement n'est accepté sans passer les contrôles de qualité et de sécurité.
 
-- [ ] Rédiger `docs/steps/step-3.md`
-- [ ] Créer le pipeline CI avec un service PostgreSQL
-- [ ] Exécuter ruff, mypy et pytest
-- [ ] Contrôler que les migrations reflètent les modèles (`alembic check`)
-- [ ] Ajouter pip-audit et gitleaks sur tout l'historique
-- [ ] Épingler les actions CI par empreinte et restreindre les permissions du pipeline
-- [ ] Mesurer la couverture de tests et fixer un seuil
+- [x] Rédiger `docs/steps/step-3.md`
+- [x] Créer le pipeline CI avec un service PostgreSQL
+- [x] Exécuter ruff, mypy et pytest
+- [x] Contrôler que les migrations reflètent les modèles (`alembic check`)
+- [x] Ajouter pip-audit et gitleaks sur tout l'historique
+- [x] Épingler les actions CI par empreinte et restreindre les permissions du pipeline
+- [x] Mesurer la couverture de tests et fixer un seuil
+- [x] Travailler sur `daniel_dev` et protéger `main` : pull request et CI verte obligatoires
 
 **Terminé lorsque :** une dépendance vulnérable ou un test en échec bloque le pipeline.
 
@@ -112,15 +113,15 @@ rôle applicatif ne peut pas exécuter `DROP TABLE`.
 
 **Objectif :** créer des comptes en protégeant les mots de passe selon l'état de l'art.
 
-- [ ] Rédiger `docs/steps/step-4.md`
-- [ ] Créer la table `users` et sa migration
-- [ ] Normaliser les e-mails et garantir leur unicité en base
-- [ ] Implémenter le hachage argon2id hors de la boucle événementielle
-- [ ] Borner les hachages simultanés pour éviter l'épuisement de la mémoire
-- [ ] Appliquer la politique de mot de passe : 12 à 128 caractères, liste de mots de passe courants
-- [ ] Implémenter `POST /auth/register`
-- [ ] Séparer strictement les schémas d'entrée et de sortie
-- [ ] Tester le hachage, la politique et l'absence du hash dans les réponses
+- [x] Rédiger `docs/steps/step-4.md`
+- [x] Créer la table `users` et sa migration
+- [x] Normaliser les e-mails et garantir leur unicité en base
+- [x] Implémenter le hachage argon2id hors de la boucle événementielle
+- [x] Borner les hachages simultanés pour éviter l'épuisement de la mémoire
+- [x] Appliquer la politique de mot de passe : 12 à 128 caractères, liste de mots de passe courants
+- [x] Implémenter `POST /auth/register`
+- [x] Séparer strictement les schémas d'entrée et de sortie
+- [x] Tester le hachage, la politique et l'absence du hash dans les réponses
 
 **Terminé lorsque :** aucun chemin de code ne peut renvoyer ou journaliser un mot de passe ou son
 empreinte.
@@ -134,19 +135,19 @@ empreinte.
 
 **Objectif :** des sessions courtes, révocables, et résistantes au vol de jeton.
 
-- [ ] Rédiger `docs/steps/step-5.md`
-- [ ] Installer PyJWT et valider une clé de signature d'au moins 256 bits
-- [ ] Implémenter `POST /auth/login` avec une réponse identique et un temps constant, compte existant ou non
-- [ ] Émettre un jeton d'accès de 15 minutes avec `iss`, `aud`, `sub`, `iat`, `exp`, `jti`
-- [ ] Vérifier strictement algorithme, signature et revendications
-- [ ] Créer la dépendance `get_current_user`, qui recharge l'utilisateur à chaque requête
-- [ ] Stocker les jetons de renouvellement opaques sous forme hachée
-- [ ] Implémenter `POST /auth/refresh` avec rotation atomique
-- [ ] Révoquer toute la famille de jetons en cas de réutilisation
-- [ ] Implémenter `POST /auth/logout` et `POST /auth/logout-all`
-- [ ] Invalider les jetons d'accès via `token_version`
-- [ ] Mettre à niveau les empreintes lorsque les paramètres argon2id changent
-- [ ] Tester jetons expirés, falsifiés, `alg=none`, réutilisés et rafraîchissements concurrents
+- [x] Rédiger `docs/steps/step-5.md`
+- [x] Installer PyJWT et valider une clé de signature d'au moins 256 bits
+- [x] Implémenter `POST /auth/login` avec une réponse identique et un temps constant, compte existant ou non
+- [x] Émettre un jeton d'accès de 15 minutes avec `iss`, `aud`, `sub`, `iat`, `exp`, `jti`
+- [x] Vérifier strictement algorithme, signature et revendications
+- [x] Créer la dépendance `get_current_user`, qui recharge l'utilisateur à chaque requête
+- [x] Stocker les jetons de renouvellement opaques sous forme hachée
+- [x] Implémenter `POST /auth/refresh` avec rotation atomique
+- [x] Révoquer toute la famille de jetons en cas de réutilisation
+- [x] Implémenter `POST /auth/logout` et `POST /auth/logout-all`
+- [x] Invalider les jetons d'accès via `token_version`
+- [x] Mettre à niveau les empreintes lorsque les paramètres argon2id changent
+- [x] Tester jetons expirés, falsifiés, `alg=none`, réutilisés et rafraîchissements concurrents
 
 **Terminé lorsque :** la réutilisation d'un jeton de renouvellement coupe toute la session associée.
 
@@ -157,16 +158,17 @@ empreinte.
 **Objectif :** rendre les attaques automatisées coûteuses, sans permettre de bloquer un compte
 légitime.
 
-- [ ] Rédiger `docs/steps/step-6.md`
-- [ ] Ajouter Redis, protégé par mot de passe et non exposé
-- [ ] Implémenter un limiteur de débit à compteurs atomiques
-- [ ] Limiter connexion, inscription et réinitialisation par IP et par compte
-- [ ] Appliquer une temporisation progressive plutôt qu'un verrouillage définitif
-- [ ] Rejeter les requêtes d'authentification si Redis est indisponible
-- [ ] N'accepter `X-Forwarded-For` que depuis des proxys de confiance
-- [ ] Limiter la taille des corps de requête
-- [ ] Répondre `429` avec `Retry-After`
-- [ ] Tester le dépassement des limites, le contournement et la panne de Redis
+- [x] Rédiger `docs/steps/step-6.md`
+- [x] Ajouter Redis, protégé par mot de passe et non exposé
+- [x] Implémenter un limiteur de débit à compteurs atomiques
+- [x] Limiter connexion, inscription et réinitialisation par IP et par compte
+- [x] Limiter le renouvellement (30/min) et les routes authentifiées (120/min) par utilisateur
+- [x] Appliquer une temporisation progressive plutôt qu'un verrouillage définitif
+- [x] Rejeter les requêtes d'authentification si Redis est indisponible
+- [x] N'accepter `X-Forwarded-For` que depuis des proxys de confiance
+- [x] Limiter la taille des corps de requête
+- [x] Répondre `429` avec `Retry-After`
+- [x] Tester le dépassement des limites, le contournement et la panne de Redis
 
 **Terminé lorsque :** un test de force brute est bloqué sans verrouiller durablement la victime.
 
@@ -176,15 +178,15 @@ légitime.
 
 **Objectif :** des parcours de compte qui ne révèlent pas quelles adresses sont inscrites.
 
-- [ ] Rédiger `docs/steps/step-7.md`
-- [ ] Créer une interface d'envoi d'e-mails, avec Mailpit en développement
-- [ ] Créer la table `one_time_tokens`, avec jetons hachés, expirants et à usage unique
-- [ ] Rendre `POST /auth/register` uniforme (`202`), que l'adresse existe ou non
-- [ ] Implémenter `POST /auth/verify-email`
-- [ ] Refuser la connexion tant que l'adresse n'est pas vérifiée
-- [ ] Implémenter `POST /auth/password/forgot` avec réponse uniforme
-- [ ] Implémenter `POST /auth/password/reset`, qui révoque toutes les sessions
-- [ ] Tester l'expiration, la réutilisation et l'uniformité des réponses
+- [x] Rédiger `docs/steps/step-7.md`
+- [x] Créer une interface d'envoi d'e-mails, avec Mailpit en développement
+- [x] Créer la table `one_time_tokens`, avec jetons hachés, expirants et à usage unique
+- [x] Rendre `POST /auth/register` uniforme (`202`), que l'adresse existe ou non
+- [x] Implémenter `POST /auth/verify-email`
+- [x] Refuser la connexion tant que l'adresse n'est pas vérifiée
+- [x] Implémenter `POST /auth/password/forgot` avec réponse uniforme
+- [x] Implémenter `POST /auth/password/reset`, qui révoque toutes les sessions
+- [x] Tester l'expiration, la réutilisation et l'uniformité des réponses
 
 **Terminé lorsque :** les réponses et les temps de traitement ne permettent pas de distinguer une
 adresse connue d'une adresse inconnue.
@@ -195,20 +197,20 @@ adresse connue d'une adresse inconnue.
 
 **Objectif :** un CRUD complet où un utilisateur ne peut jamais atteindre les données d'un autre.
 
-- [ ] Rédiger `docs/steps/step-8.md`
-- [ ] Créer la table `tasks`, avec titre et description obligatoires et contraintes `CHECK`
-- [ ] Créer la table d'association N-N `task_days` : `task_id`, `user_id`, `day`, `start_hour`, `duration_hours`
-- [ ] Garantir par clé étrangère composite (`task_id`, `user_id`) qu'un jour appartient au propriétaire de la tâche
-- [ ] Garantir en base qu'une tâche tient dans la journée : début de 0 à 23, durée d'au moins 1, fin à 24 au plus
-- [ ] Définir les schémas : titre de 1 à 200 caractères, description de 1 à 5 000
-- [ ] Rejeter les champs vides, inconnus et les caractères de contrôle, dont l'octet NUL
-- [ ] Filtrer systématiquement chaque requête par propriétaire dans le dépôt
-- [ ] Implémenter création, lecture, modification partielle et suppression
-- [ ] Exiger au moins un jour à la création, et 31 jours au plus par requête
-- [ ] Implémenter `PUT` et `DELETE /tasks/{id}/days/{day}`
-- [ ] Refuser le retrait du dernier jour d'une tâche, sous verrou de ligne
-- [ ] Répondre `404` pour la ressource d'un autre utilisateur
-- [ ] Tester l'isolation entre utilisateurs sur chaque route
+- [x] Rédiger `docs/steps/step-8.md`
+- [x] Créer la table `tasks`, avec titre et description obligatoires et contraintes `CHECK`
+- [x] Créer la table d'association N-N `task_days` : `task_id`, `user_id`, `day`, `start_hour`, `duration_hours`
+- [x] Garantir par clé étrangère composite (`task_id`, `user_id`) qu'un jour appartient au propriétaire de la tâche
+- [x] Garantir en base qu'une tâche tient dans la journée : début de 0 à 23, durée d'au moins 1, fin à 24 au plus
+- [x] Définir les schémas : titre de 1 à 200 caractères, description de 1 à 5 000
+- [x] Rejeter les champs vides, inconnus et les caractères de contrôle, dont l'octet NUL
+- [x] Filtrer systématiquement chaque requête par propriétaire dans le dépôt
+- [x] Implémenter création, lecture, modification partielle et suppression
+- [x] Exiger au moins un jour à la création, et 31 jours au plus par requête
+- [x] Implémenter `PUT` et `DELETE /tasks/{id}/days/{day}`
+- [x] Refuser le retrait du dernier jour d'une tâche, sous verrou de ligne
+- [x] Répondre `404` pour la ressource d'un autre utilisateur
+- [x] Tester l'isolation entre utilisateurs sur chaque route
 
 **Terminé lorsque :** chaque route a un test prouvant qu'un second utilisateur reçoit `404`.
 
@@ -218,18 +220,18 @@ adresse connue d'une adresse inconnue.
 
 **Objectif :** fournir à la grille des données légères et fiables, sans aucun chevauchement.
 
-- [ ] Rédiger `docs/steps/step-9.md`
-- [ ] Interdire en base le chevauchement de deux tâches d'un utilisateur (`EXCLUDE`, extension `btree_gist`)
-- [ ] Traduire ce conflit en réponse `409`, y compris entre requêtes concurrentes
-- [ ] Implémenter `GET /planning?start=…&end=…`, avec une période de 31 jours au plus
-- [ ] Renvoyer dans la grille le titre et la position des tâches, jamais leur description
-- [ ] Valider les jours au format ISO 8601 et refuser les périodes incohérentes
-- [ ] Ajouter par migration le statut et `completed_at` à `task_days`, et la priorité à `tasks`
-- [ ] Définir les transitions de statut et la gestion de `completed_at`
-- [ ] Ajouter les filtres de la grille par statut et priorité
-- [ ] Implémenter une pagination par curseur sur `GET /tasks`, avec taille de page maximale
-- [ ] Créer les index composites à partir des requêtes réelles
-- [ ] Tester les chevauchements, les bornes, les filtres et l'isolation de la grille
+- [x] Rédiger `docs/steps/step-9.md`
+- [x] Interdire en base le chevauchement de deux tâches d'un utilisateur (`EXCLUDE`, extension `btree_gist`)
+- [x] Traduire ce conflit en réponse `409`, y compris entre requêtes concurrentes
+- [x] Implémenter `GET /planning?start=…&end=…`, avec une période de 31 jours au plus
+- [x] Renvoyer dans la grille le titre et la position des tâches, jamais leur description
+- [x] Valider les jours au format ISO 8601 et refuser les périodes incohérentes
+- [x] Ajouter par migration le statut et `completed_at` à `task_days`, et la priorité à `tasks`
+- [x] Définir les transitions de statut et la gestion de `completed_at`
+- [x] Ajouter les filtres de la grille par statut et priorité
+- [x] Implémenter une pagination par curseur sur `GET /tasks`, avec taille de page maximale
+- [x] Créer les index composites à partir des requêtes réelles
+- [x] Tester les chevauchements, les bornes, les filtres et l'isolation de la grille
 
 **Terminé lorsque :** deux requêtes simultanées ne peuvent pas occuper la même case, et la grille ne
 renvoie aucune description.

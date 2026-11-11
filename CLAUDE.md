@@ -9,6 +9,7 @@ Avant de coder, lire le fichier `docs/steps/step-x.md` de la phase en cours.
 ## Règles de travail (non négociables)
 
 - **Jamais de commit, de push ni de `git init` sans autorisation explicite**, demandée à chaque fois.
+- Le travail se fait sur `daniel_dev` ; `main` ne change que par pull request, CI verte obligatoire.
 - **Aucun scaffold global.** Un fichier, un dossier, une dépendance ou un service (Docker, Redis,
   CI…) n'est créé que si la phase en cours l'exige.
 - Rester dans le périmètre de la phase. Signaler ce qui en sort au lieu de le faire.

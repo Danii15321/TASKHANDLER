@@ -1,0 +1,115 @@
+# Intégration continue : aucun changement n'est accepté sans passer ces contrôles.
+name: CI
+
+# Le travail se fait sur `daniel_dev` ; `main` ne change que par une pull request dont la CI est
+# verte. Chaque push est donc contrôlé, puis la pull request vérifie le résultat de la fusion.
+on:
+  push:
+    branches: [main, daniel_dev]
+  # `pull_request` et jamais `pull_request_target` : le code d'une contribution externe ne doit
+  # pas s'exécuter avec les droits du dépôt.
+  pull_request:
+    branches: [main]
+
+# Aucun droit par défaut : chaque tâche déclare uniquement ce dont elle a besoin.
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Chaque action est épinglée par empreinte : un tag comme `v7` peut être déplacé vers un
+      # code malveillant après coup, pas une empreinte de commit.
+      - name: Récupérer le code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Le jeton n'a aucune raison de rester sur le disque après la récupération du code.
+          persist-credentials: false
+      - name: Installer uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.7"
+          # Pas de cache partagé : une branche ne doit pas pouvoir influencer la suivante.
+          enable-cache: false
+      - name: Analyse statique et règles de sécurité
+        run: uv run --locked ruff check .
+      - name: Formatage
+        run: uv run --locked ruff format --check .
+      - name: Types (mode strict)
+        run: uv run --locked mypy .
+
+  tests:
+    name: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Installer uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.7"
+          enable-cache: false
+      # Secrets aléatoires, propres à cette exécution : aucun secret GitHub n'est nécessaire,
+      # donc aucun ne peut fuiter.
+      - name: Générer des secrets jetables
+        run: scripts/generate-dev-env.sh
+      # Le même `compose.yaml` qu'en développement : même image, mêmes rôles, mêmes droits.
+      - name: Démarrer PostgreSQL
+        run: docker compose --env-file .env.compose up --detach --wait
+      - name: Appliquer les migrations
+        run: uv run --locked alembic upgrade head
+      - name: Vérifier que les migrations reflètent les modèles
+        run: uv run --locked alembic check
+      - name: Tests sur un vrai PostgreSQL
+        run: uv run --locked coverage run -m pytest
+      - name: Seuil de couverture
+        run: uv run --locked coverage report
+
+  audit:
+    name: audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Tout l'historique : un secret retiré depuis reste lisible dans un ancien commit.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Installer uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.7"
+          enable-cache: false
+      # L'audit porte sur les versions exactes du fichier de verrouillage, outils compris.
+      - name: Vulnérabilités connues des dépendances
+        run: |
+          uv export --locked --no-emit-project --quiet --output-file "$RUNNER_TEMP/requirements.txt"
+          uv run --locked pip-audit --disable-pip --require-hashes --requirement "$RUNNER_TEMP/requirements.txt"
+      # Même version que le hook pre-commit. `--redact` : un secret détecté ne doit pas être
+      # recopié dans les journaux de la CI, lisibles bien au-delà de l'auteur du commit.
+      - name: Secrets dans tout l'historique Git
+        working-directory: .
+        run: >-
+          docker run --rm --volume "$GITHUB_WORKSPACE:/repo:ro"
+          ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+          git --redact --no-banner /repo

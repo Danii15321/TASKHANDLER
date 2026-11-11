@@ -4,8 +4,10 @@ import io
 import json
 import logging
 import os
+import secrets
+import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 from typing import Self
 
@@ -22,8 +24,10 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.core.config import APP_DATABASE_ROLE, Settings
+from app.core.config import APP_DATABASE_ROLE, MigrationSettings, Settings
+from app.core.email import OutgoingEmail
 from app.core.logging_config import JsonFormatter
+from app.db.session import SessionFactory, get_session, get_session_factory
 from app.main import create_app
 
 LogReader = Callable[[], list[dict[str, object]]]
@@ -31,6 +35,9 @@ LogReader = Callable[[], list[dict[str, object]]]
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 TEST_DATABASE_NAME = "taskhandler_test"
 PROBE_TABLE = "security_probe"
+
+# Clé de signature tirée à chaque exécution : aucun test ne dépend d'une clé connue à l'avance.
+TEST_JWT_SECRET = secrets.token_hex(32)
 
 # Valeur longue et sans mot d'exemple, acceptée par la validation mais reconnue par aucun serveur.
 UNUSED_CREDENTIAL = "k" * 40
@@ -43,6 +50,93 @@ def unreachable_database_url(query: str = "") -> SecretStr:
     return SecretStr(
         f"postgresql+asyncpg://{APP_DATABASE_ROLE}:{UNUSED_CREDENTIAL}@127.0.0.1:1/taskhandler{query}"
     )
+
+
+# requires : rien.
+# assigns  : rien.
+# ensures  : renvoie une URL Redis valide vers un port fermé : aucune connexion ne peut aboutir.
+#            `rediss://` la rend acceptable dans tous les environnements, production comprise.
+def unreachable_redis_url() -> SecretStr:
+    return SecretStr(f"rediss://taskhandler_app:{UNUSED_CREDENTIAL}@127.0.0.1:1/0")
+
+
+# requires : rien.
+# assigns  : rien.
+# ensures  : renvoie un préfixe de clés propre à un test : les compteurs de deux tests ne se
+#            mélangent jamais, sans avoir à vider Redis (ce que ses droits interdisent d'ailleurs).
+def unique_rate_limit_prefix() -> str:
+    return f"rl:test:{uuid.uuid4().hex}:"
+
+
+class RecordingEmailSender:
+    """Expéditeur de test : garde les e-mails en mémoire au lieu de les envoyer."""
+
+    # requires : rien.
+    # assigns  : initialise la boîte d'envoi.
+    # ensures  : aucun e-mail n'a encore été envoyé.
+    def __init__(self) -> None:
+        self.sent: list[OutgoingEmail] = []
+
+    # requires : rien.
+    # assigns  : ajoute l'e-mail à `sent`.
+    # ensures  : l'e-mail est consultable par le test.
+    async def send(self, email: OutgoingEmail) -> None:
+        self.sent.append(email)
+
+    # requires : rien.
+    # assigns  : rien.
+    # ensures  : renvoie les e-mails envoyés à `recipient`, du plus ancien au plus récent.
+    def to(self, recipient: str) -> list[OutgoingEmail]:
+        return [email for email in self.sent if email.recipient == recipient]
+
+    # requires : un e-mail contenant un lien `path#token=…` a été envoyé à `recipient`.
+    # assigns  : rien.
+    # ensures  : renvoie le jeton du lien le plus récent vers `path`.
+    def latest_token(self, recipient: str, path: str) -> str:
+        marker = f"{path}#token="
+        for email in reversed(self.to(recipient)):
+            if marker in email.body:
+                return email.body.split(marker, 1)[1].split()[0]
+        raise AssertionError(f"aucun lien {path} envoyé à {recipient}")
+
+
+class OutboxClient(httpx2.AsyncClient):
+    """Client HTTP de test qui voit aussi les e-mails envoyés et la base de l'application."""
+
+    # requires : `outbox` est l'expéditeur de l'application, `session_factory` sa base.
+    # assigns  : initialise le client.
+    # ensures  : le client envoie ses requêtes à l'application par `transport`.
+    def __init__(
+        self,
+        *,
+        transport: httpx2.ASGITransport,
+        outbox: RecordingEmailSender,
+        session_factory: SessionFactory,
+    ) -> None:
+        super().__init__(transport=transport, base_url="http://test")
+        self.outbox = outbox
+        self.session_factory = session_factory
+
+
+# requires : `session` est la session isolée du test.
+# assigns  : rien.
+# ensures  : renvoie une fabrique qui prête cette session sans jamais la fermer : les tâches
+#            d'arrière-plan écrivent ainsi dans la transaction annulée du test.
+def borrowing_factory(session: AsyncSession) -> SessionFactory:
+    # requires : rien.
+    # assigns  : rien.
+    # ensures  : prête la session du test, sans la fermer à la sortie.
+    @asynccontextmanager
+    async def borrow() -> AsyncIterator[AsyncSession]:
+        yield session
+
+    # requires : rien.
+    # assigns  : rien.
+    # ensures  : renvoie un gestionnaire de contexte qui prête la session.
+    def factory() -> AbstractAsyncContextManager[AsyncSession]:
+        return borrow()
+
+    return factory
 
 
 class DatabaseTestSettings(BaseSettings):
@@ -59,6 +153,9 @@ class DatabaseTestSettings(BaseSettings):
 
     app_database_url: SecretStr
     migration_database_url: SecretStr
+    redis_url: SecretStr
+    smtp_port: int
+    mailpit_api_url: str
 
     # requires : les deux URL sont renseignées.
     # assigns  : rien.
@@ -102,13 +199,35 @@ async def isolated_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
 
 # requires : rien.
-# assigns  : retire du processus les variables `TASKHANDLER_*` le temps du test.
-# ensures  : un test ne dépend jamais de la configuration de la machine qui l'exécute.
+# assigns  : retire du processus les variables `TASKHANDLER_*`, puis fixe les réglages
+#            obligatoires de test (clé JWT, Redis et e-mail injoignables), le temps du test.
+# ensures  : un test ne dépend jamais de la configuration de la machine qui l'exécute, ni de son
+#            fichier `.env` ; seuls les réglages obligatoires sont fournis, et un test peut les
+#            retirer.
 @pytest.fixture(autouse=True)
 def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in list(os.environ):
         if name.startswith("TASKHANDLER_"):
             monkeypatch.delenv(name)
+    # Aucune configuration ne lit le `.env` du développeur pendant les tests : sans cela, un test
+    # passerait ou échouerait selon la machine (ce fichier n'existe pas partout, et la CI en
+    # génère un en mode développement). Un test qui veut un fichier le passe par `_env_file`.
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+    monkeypatch.setitem(MigrationSettings.model_config, "env_file", None)
+    monkeypatch.setenv("TASKHANDLER_JWT_SECRET", TEST_JWT_SECRET)
+    monkeypatch.setenv("TASKHANDLER_REDIS_URL", unreachable_redis_url().get_secret_value())
+    # Réglages d'e-mail valables partout, production comprise ; le port 1 est fermé.
+    for name, value in {
+        "TASKHANDLER_SMTP_HOST": "127.0.0.1",
+        "TASKHANDLER_SMTP_PORT": "1",
+        "TASKHANDLER_SMTP_USERNAME": "taskhandler",
+        "TASKHANDLER_SMTP_PASSWORD": UNUSED_CREDENTIAL,
+        "TASKHANDLER_EMAIL_FROM": "ne-pas-repondre@taskhandler.fr",
+        "TASKHANDLER_FRONTEND_BASE_URL": "https://app.taskhandler.fr",
+        # Hôtes des clients de test : `test` (httpx2) et `testserver` (TestClient).
+        "TASKHANDLER_ALLOWED_HOSTS": '["test", "testserver", "localhost", "127.0.0.1"]',
+    }.items():
+        monkeypatch.setenv(name, value)
 
 
 # requires : rien.
@@ -231,7 +350,8 @@ async def probe_table(migrator_engine: AsyncEngine) -> AsyncIterator[str]:
 
 # requires : la base de test est migrée.
 # assigns  : la configuration globale des journaux ; ferme le moteur à la fin du test.
-# ensures  : fournit une application réellement reliée à PostgreSQL avec le rôle applicatif.
+# ensures  : fournit une application réellement reliée à PostgreSQL et à Redis, avec des
+#            compteurs de limitation propres au test.
 @pytest.fixture
 async def database_app(
     migrated_database: None, database_settings: DatabaseTestSettings
@@ -240,18 +360,118 @@ async def database_app(
         Settings(
             environment="test",
             database_url=database_settings.app_database_url,
+            redis_url=database_settings.redis_url,
+            rate_limit_key_prefix=unique_rate_limit_prefix(),
             _env_file=None,
         )
     )
     yield application
     await application.state.engine.dispose()
+    await application.state.redis.aclose()
 
 
 # requires : `database_app` est reliée à PostgreSQL.
-# assigns  : rien.
-# ensures  : fournit un client asynchrone, sur la même boucle d'événements que le test.
+# assigns  : remplace l'expéditeur d'e-mails par un enregistreur.
+# ensures  : fournit un client asynchrone, sur la même boucle d'événements que le test, dont les
+#            écritures sont réellement validées en base.
 @pytest.fixture
-async def database_client(database_app: FastAPI) -> AsyncIterator[httpx2.AsyncClient]:
+async def database_client(database_app: FastAPI) -> AsyncIterator[OutboxClient]:
+    outbox = RecordingEmailSender()
+    database_app.state.email_sender = outbox
     transport = httpx2.ASGITransport(app=database_app, raise_app_exceptions=False)
-    async with httpx2.AsyncClient(transport=transport, base_url="http://test") as async_client:
+    async with OutboxClient(
+        transport=transport, outbox=outbox, session_factory=database_app.state.session_factory
+    ) as async_client:
         yield async_client
+
+
+# requires : `database_app` est reliée à PostgreSQL, `db_session` est une session isolée.
+# assigns  : remplace la session des routes et des tâches d'arrière-plan par `db_session`, et
+#            l'expéditeur d'e-mails par un enregistreur, le temps du test.
+# ensures  : fournit un client dont toutes les écritures, même validées, sont annulées à la fin.
+@pytest.fixture
+async def isolated_client(
+    database_app: FastAPI, db_session: AsyncSession
+) -> AsyncIterator[OutboxClient]:
+    # requires : rien.
+    # assigns  : annule la transaction en cours si la route lève une erreur.
+    # ensures  : fournit la session isolée du test à la place d'une nouvelle session, avec la même
+    #            annulation automatique que `get_session` en production.
+    async def use_test_session() -> AsyncIterator[AsyncSession]:
+        try:
+            yield db_session
+        except Exception:
+            await db_session.rollback()
+            raise
+
+    factory = borrowing_factory(db_session)
+    outbox = RecordingEmailSender()
+    database_app.state.email_sender = outbox
+    database_app.dependency_overrides[get_session] = use_test_session
+    database_app.dependency_overrides[get_session_factory] = lambda: factory
+    transport = httpx2.ASGITransport(app=database_app, raise_app_exceptions=False)
+    async with OutboxClient(
+        transport=transport, outbox=outbox, session_factory=factory
+    ) as async_client:
+        yield async_client
+    database_app.dependency_overrides.clear()
+
+
+REGISTER_URL = "/api/v1/auth/register"
+LOGIN_URL = "/api/v1/auth/login"
+REFRESH_URL = "/api/v1/auth/refresh"
+LOGOUT_URL = "/api/v1/auth/logout"
+LOGOUT_ALL_URL = "/api/v1/auth/logout-all"
+VERIFY_EMAIL_URL = "/api/v1/auth/verify-email"
+FORGOT_PASSWORD_URL = "/api/v1/auth/password/forgot"
+RESET_PASSWORD_URL = "/api/v1/auth/password/reset"
+TEST_PASSPHRASE = "violet ruisseau lanterne 2026"
+
+
+# requires : `client` est relié à l'application de test.
+# assigns  : crée un compte et vérifie son adresse, en suivant le lien reçu par e-mail.
+# ensures  : renvoie l'identifiant du compte créé, prêt à se connecter ; échoue sinon.
+async def create_account(
+    client: OutboxClient, email: str = "alice@exemple.org", password: str = TEST_PASSPHRASE
+) -> str:
+    response = await client.post(REGISTER_URL, json={"email": email, "password": password})
+    assert response.status_code == 202, response.text
+    token = client.outbox.latest_token(email, "/verify-email")
+    verified = await client.post(VERIFY_EMAIL_URL, json={"token": token})
+    assert verified.status_code == 204, verified.text
+    async with client.session_factory() as session:
+        account_id = (
+            await session.execute(
+                text("SELECT id FROM users WHERE email = :email"), {"email": email}
+            )
+        ).scalar_one()
+    return str(account_id)
+
+
+# requires : `client` est relié à l'application de test, le compte existe.
+# assigns  : ouvre une session.
+# ensures  : renvoie la paire de jetons ; échoue si la connexion est refusée.
+async def login_tokens(
+    client: httpx2.AsyncClient, email: str = "alice@exemple.org", password: str = TEST_PASSPHRASE
+) -> dict[str, str]:
+    response = await client.post(LOGIN_URL, json={"email": email, "password": password})
+    assert response.status_code == 200, response.text
+    tokens: dict[str, str] = response.json()
+    return tokens
+
+
+# requires : rien.
+# assigns  : rien.
+# ensures  : renvoie l'en-tête d'authentification d'un jeton d'accès.
+def bearer(access_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {access_token}"}
+
+
+# requires : `session` est une session isolée, `user_id` un compte existant.
+# assigns  : déclare `user_id` à PostgreSQL pour la transaction en cours (RLS des tâches).
+# ensures  : les requêtes suivantes sur `tasks` et `task_days` agissent au nom de ce compte, comme
+#            après `get_current_user` dans l'application.
+async def act_as(session: AsyncSession, user_id: str) -> None:
+    await session.execute(
+        text("SELECT set_config('app.current_user_id', :user_id, true)"), {"user_id": str(user_id)}
+    )
