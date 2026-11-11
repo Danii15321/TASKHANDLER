@@ -24,7 +24,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.core.config import APP_DATABASE_ROLE, Settings
+from app.core.config import APP_DATABASE_ROLE, MigrationSettings, Settings
 from app.core.email import OutgoingEmail
 from app.core.logging_config import JsonFormatter
 from app.db.session import SessionFactory, get_session, get_session_factory
@@ -201,13 +201,19 @@ async def isolated_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 # requires : rien.
 # assigns  : retire du processus les variables `TASKHANDLER_*`, puis fixe les réglages
 #            obligatoires de test (clé JWT, Redis et e-mail injoignables), le temps du test.
-# ensures  : un test ne dépend jamais de la configuration de la machine qui l'exécute ; seule la
-#            clé de signature, obligatoire, est fournie (un test peut la retirer).
+# ensures  : un test ne dépend jamais de la configuration de la machine qui l'exécute, ni de son
+#            fichier `.env` ; seuls les réglages obligatoires sont fournis, et un test peut les
+#            retirer.
 @pytest.fixture(autouse=True)
 def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in list(os.environ):
         if name.startswith("TASKHANDLER_"):
             monkeypatch.delenv(name)
+    # Aucune configuration ne lit le `.env` du développeur pendant les tests : sans cela, un test
+    # passerait ou échouerait selon la machine (ce fichier n'existe pas partout, et la CI en
+    # génère un en mode développement). Un test qui veut un fichier le passe par `_env_file`.
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+    monkeypatch.setitem(MigrationSettings.model_config, "env_file", None)
     monkeypatch.setenv("TASKHANDLER_JWT_SECRET", TEST_JWT_SECRET)
     monkeypatch.setenv("TASKHANDLER_REDIS_URL", unreachable_redis_url().get_secret_value())
     # Réglages d'e-mail valables partout, production comprise ; le port 1 est fermé.

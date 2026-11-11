@@ -91,6 +91,8 @@ def test_production_requires_secure_email(overrides: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         Settings.model_validate(
             {
+                # Explicite : ce test porte sur la production, quel que soit l'environnement local.
+                "environment": "production",
                 "database_url": unreachable_database_url("?ssl=verify-full"),
                 "redis_url": unreachable_redis_url(),
                 **values,
