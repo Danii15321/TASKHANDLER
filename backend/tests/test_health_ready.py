@@ -14,7 +14,12 @@ from app.core.config import Settings
 from app.core.errors import INTERNAL_ERROR_DETAIL
 from app.main import create_app
 from app.modules.health import router as health_router
-from tests.conftest import UNUSED_CREDENTIAL, DatabaseTestSettings, LogReader
+from tests.conftest import (
+    UNUSED_CREDENTIAL,
+    DatabaseTestSettings,
+    LogReader,
+    unreachable_redis_url,
+)
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 INFRASTRUCTURE_DETAILS = ("127.0.0.1", "taskhandler", "postgres", "asyncpg", UNUSED_CREDENTIAL)
@@ -47,7 +52,7 @@ def test_ready_hides_infrastructure_when_database_is_down(
     for detail in INFRASTRUCTURE_DETAILS:
         assert detail not in response.text
 
-    events = [event for event in read_logs() if event["message"] == "database_unavailable"]
+    events = [event for event in read_logs() if event["message"] == "dependency_unavailable"]
     assert len(events) == 1
     assert UNUSED_CREDENTIAL not in str(read_logs())
 
@@ -91,6 +96,33 @@ async def test_ready_hides_rejected_credentials(
     async with httpx2.AsyncClient(transport=transport, base_url="http://test") as async_client:
         response = await async_client.get("/health/ready")
     await application.state.engine.dispose()
+    await application.state.redis.aclose()
+
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert response.json()["detail"] == INTERNAL_ERROR_DETAIL
+
+
+# requires : PostgreSQL est démarré, Redis est injoignable.
+# assigns  : rien.
+# ensures  : sans Redis, le service n'est pas prêt, même si PostgreSQL répond.
+@pytest.mark.anyio
+async def test_ready_fails_when_redis_is_down(
+    migrated_database: None, database_settings: DatabaseTestSettings
+) -> None:
+    application = create_app(
+        Settings(
+            environment="test",
+            database_url=database_settings.app_database_url,
+            redis_url=unreachable_redis_url(),
+            _env_file=None,
+        )
+    )
+    transport = httpx2.ASGITransport(app=application, raise_app_exceptions=False)
+
+    async with httpx2.AsyncClient(transport=transport, base_url="http://test") as async_client:
+        response = await async_client.get("/health/ready")
+    await application.state.engine.dispose()
+    await application.state.redis.aclose()
 
     assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert response.json()["detail"] == INTERNAL_ERROR_DETAIL

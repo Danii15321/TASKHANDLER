@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import secrets
+import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -50,6 +51,22 @@ def unreachable_database_url(query: str = "") -> SecretStr:
     )
 
 
+# requires : rien.
+# assigns  : rien.
+# ensures  : renvoie une URL Redis valide vers un port fermé : aucune connexion ne peut aboutir.
+#            `rediss://` la rend acceptable dans tous les environnements, production comprise.
+def unreachable_redis_url() -> SecretStr:
+    return SecretStr(f"rediss://taskhandler_app:{UNUSED_CREDENTIAL}@127.0.0.1:1/0")
+
+
+# requires : rien.
+# assigns  : rien.
+# ensures  : renvoie un préfixe de clés propre à un test : les compteurs de deux tests ne se
+#            mélangent jamais, sans avoir à vider Redis (ce que ses droits interdisent d'ailleurs).
+def unique_rate_limit_prefix() -> str:
+    return f"rl:test:{uuid.uuid4().hex}:"
+
+
 class DatabaseTestSettings(BaseSettings):
     """URL de la base de test ; `.env.test` ou l'environnement doivent les fournir."""
 
@@ -64,6 +81,7 @@ class DatabaseTestSettings(BaseSettings):
 
     app_database_url: SecretStr
     migration_database_url: SecretStr
+    redis_url: SecretStr
 
     # requires : les deux URL sont renseignées.
     # assigns  : rien.
@@ -117,6 +135,7 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         if name.startswith("TASKHANDLER_"):
             monkeypatch.delenv(name)
     monkeypatch.setenv("TASKHANDLER_JWT_SECRET", TEST_JWT_SECRET)
+    monkeypatch.setenv("TASKHANDLER_REDIS_URL", unreachable_redis_url().get_secret_value())
 
 
 # requires : rien.
@@ -239,7 +258,8 @@ async def probe_table(migrator_engine: AsyncEngine) -> AsyncIterator[str]:
 
 # requires : la base de test est migrée.
 # assigns  : la configuration globale des journaux ; ferme le moteur à la fin du test.
-# ensures  : fournit une application réellement reliée à PostgreSQL avec le rôle applicatif.
+# ensures  : fournit une application réellement reliée à PostgreSQL et à Redis, avec des
+#            compteurs de limitation propres au test.
 @pytest.fixture
 async def database_app(
     migrated_database: None, database_settings: DatabaseTestSettings
@@ -248,11 +268,14 @@ async def database_app(
         Settings(
             environment="test",
             database_url=database_settings.app_database_url,
+            redis_url=database_settings.redis_url,
+            rate_limit_key_prefix=unique_rate_limit_prefix(),
             _env_file=None,
         )
     )
     yield application
     await application.state.engine.dispose()
+    await application.state.redis.aclose()
 
 
 # requires : `database_app` est reliée à PostgreSQL.

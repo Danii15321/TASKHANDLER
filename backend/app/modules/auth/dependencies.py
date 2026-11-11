@@ -1,5 +1,6 @@
-"""Authentification des requêtes : la dépendance `get_current_user`."""
+"""Authentification des requêtes : `get_current_user`, puis la limite par utilisateur."""
 
+import logging
 import uuid
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -9,8 +10,14 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.dependencies import SettingsDependency
+from app.core.rate_limit import (
+    RateLimiterDependency,
+    RateLimitExceededError,
+    RateLimitUnavailableError,
+)
 from app.core.tokens import InvalidAccessTokenError, decode_access_token
 from app.db.session import SessionDependency
+from app.modules.auth.limits import authenticated_user_limit, too_many_requests
 from app.modules.auth.repository import get_authenticated_user
 from app.modules.users.models import User
 
@@ -19,6 +26,7 @@ from app.modules.users.models import User
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 UNAUTHENTICATED_DETAIL = "Authentification requise."
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -67,3 +75,24 @@ async def get_current_user(
 
 
 CurrentUserDependency = Annotated[CurrentUser, Depends(get_current_user)]
+
+
+# requires : `current` vient de `get_current_user`.
+# assigns  : enregistre la requête dans le compteur de l'utilisateur.
+# ensures  : se termine si l'utilisateur est sous sa limite ; sinon lève une erreur 429. Si Redis
+#            est indisponible, la requête passe : une panne ne doit pas empêcher un utilisateur
+#            authentifié, par exemple, de couper ses sessions après un vol.
+async def enforce_user_rate_limit(
+    current: CurrentUserDependency, limiter: RateLimiterDependency, settings: SettingsDependency
+) -> None:
+    try:
+        await limiter.hit(authenticated_user_limit(settings), str(current.user.id))
+    except RateLimitExceededError as error:
+        raise too_many_requests(error) from None
+    except RateLimitUnavailableError:
+        logger.warning("rate_limit_unavailable", extra={"limit": "authenticated-user"})
+
+
+# À déclarer sur tout routeur métier : authentification, puis limite par utilisateur, dans cet
+# ordre. Une seule ligne par routeur, donc aucune route ne peut l'oublier (OWASP API5).
+AUTHENTICATED_DEPENDENCIES = [Depends(get_current_user), Depends(enforce_user_rate_limit)]

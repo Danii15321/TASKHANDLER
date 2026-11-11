@@ -6,6 +6,7 @@ from http import HTTPStatus
 
 from fastapi import APIRouter, HTTPException
 
+from app.core.rate_limit import RateLimiterDependency
 from app.db.session import SessionDependency
 from app.modules.health.repository import ping_database
 from app.modules.health.schemas import LivenessResponse, ReadinessResponse
@@ -27,16 +28,20 @@ async def read_liveness() -> LivenessResponse:
 
 # requires : rien (route publique, sans authentification).
 # assigns  : rien.
-# ensures  : renvoie `ok` si PostgreSQL répond à temps ; sinon lève une erreur HTTP 503 générique,
-#            sans aucun détail sur l'infrastructure.
+# ensures  : renvoie `ok` si PostgreSQL et Redis répondent à temps ; sinon lève une erreur 503
+#            générique, sans aucun détail sur l'infrastructure.
 @router.get("/ready", response_model=ReadinessResponse)
-async def read_readiness(session: SessionDependency) -> ReadinessResponse:
+async def read_readiness(
+    session: SessionDependency, limiter: RateLimiterDependency
+) -> ReadinessResponse:
     try:
         async with asyncio.timeout(_READINESS_TIMEOUT_SECONDS):
             await ping_database(session)
+            # Sans Redis, l'authentification est refusée : le service n'est pas prêt non plus.
+            await limiter.ping()
     except Exception as error:
         # Volontairement large : quelle que soit la panne, le service n'est pas prêt. Seul le
         # type est journalisé, car le message peut décrire l'hôte ou le rôle de connexion.
-        logger.warning("database_unavailable", extra={"error_type": type(error).__name__})
+        logger.warning("dependency_unavailable", extra={"error_type": type(error).__name__})
         raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE) from error
     return ReadinessResponse(status="ok")

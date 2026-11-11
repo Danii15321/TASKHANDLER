@@ -9,11 +9,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 
+from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings
 from app.core.errors import register_exception_handlers
 from app.core.logging_config import configure_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.passwords import PasswordHasherService
+from app.core.rate_limit import RateLimiter, create_redis_client
 from app.db.session import create_database_engine, create_session_factory
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.router import session_router
@@ -21,7 +23,7 @@ from app.modules.health.router import router as health_router
 
 
 # requires : `app.state` a été rempli par `create_app`.
-# assigns  : calcule l'empreinte leurre au démarrage ; ferme le pool à l'arrêt.
+# assigns  : calcule l'empreinte leurre au démarrage ; ferme PostgreSQL et Redis à l'arrêt.
 # ensures  : la première connexion à un compte inconnu n'est pas plus lente que les autres, et
 #            aucune connexion à PostgreSQL ne survit à l'arrêt du serveur.
 @asynccontextmanager
@@ -29,6 +31,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     await app.state.password_hasher.prepare()
     yield
     await app.state.engine.dispose()
+    await app.state.redis.aclose()
 
 
 # requires : `settings` est valide ; si `None`, la configuration vient de l'environnement.
@@ -62,6 +65,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         queue_timeout_seconds=resolved_settings.password_hash_queue_timeout_seconds,
     )
 
+    app.state.redis = create_redis_client(resolved_settings)
+    app.state.rate_limiter = RateLimiter(
+        app.state.redis, key_prefix=resolved_settings.rate_limit_key_prefix
+    )
+
+    # Ajouté en premier, donc exécuté à l'intérieur du contexte de requête : un refus 413 porte
+    # lui aussi un identifiant de requête et le format RFC 9457.
+    app.add_middleware(
+        BodySizeLimitMiddleware, max_body_bytes=resolved_settings.max_request_body_bytes
+    )
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)
     app.include_router(health_router)

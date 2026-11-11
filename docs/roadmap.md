@@ -22,8 +22,8 @@ phase, pas avant.
 | 2 | PostgreSQL et migrations | Terminée |
 | 3 | Intégration continue | Terminée |
 | 4 | Comptes et mots de passe | Terminée |
-| 5 | Authentification et sessions | En relecture |
-| 6 | Protection contre les abus | À faire |
+| 5 | Authentification et sessions | Terminée |
+| 6 | Protection contre les abus | En relecture |
 | 7 | Vérification d'e-mail et réinitialisation | À faire |
 | 8 | Tâches | À faire |
 | 9 | Grille hebdomadaire | À faire |
@@ -135,19 +135,19 @@ empreinte.
 
 **Objectif :** des sessions courtes, révocables, et résistantes au vol de jeton.
 
-- [ ] Rédiger `docs/steps/step-5.md`
-- [ ] Installer PyJWT et valider une clé de signature d'au moins 256 bits
-- [ ] Implémenter `POST /auth/login` avec une réponse identique et un temps constant, compte existant ou non
-- [ ] Émettre un jeton d'accès de 15 minutes avec `iss`, `aud`, `sub`, `iat`, `exp`, `jti`
-- [ ] Vérifier strictement algorithme, signature et revendications
-- [ ] Créer la dépendance `get_current_user`, qui recharge l'utilisateur à chaque requête
-- [ ] Stocker les jetons de renouvellement opaques sous forme hachée
-- [ ] Implémenter `POST /auth/refresh` avec rotation atomique
-- [ ] Révoquer toute la famille de jetons en cas de réutilisation
-- [ ] Implémenter `POST /auth/logout` et `POST /auth/logout-all`
-- [ ] Invalider les jetons d'accès via `token_version`
-- [ ] Mettre à niveau les empreintes lorsque les paramètres argon2id changent
-- [ ] Tester jetons expirés, falsifiés, `alg=none`, réutilisés et rafraîchissements concurrents
+- [x] Rédiger `docs/steps/step-5.md`
+- [x] Installer PyJWT et valider une clé de signature d'au moins 256 bits
+- [x] Implémenter `POST /auth/login` avec une réponse identique et un temps constant, compte existant ou non
+- [x] Émettre un jeton d'accès de 15 minutes avec `iss`, `aud`, `sub`, `iat`, `exp`, `jti`
+- [x] Vérifier strictement algorithme, signature et revendications
+- [x] Créer la dépendance `get_current_user`, qui recharge l'utilisateur à chaque requête
+- [x] Stocker les jetons de renouvellement opaques sous forme hachée
+- [x] Implémenter `POST /auth/refresh` avec rotation atomique
+- [x] Révoquer toute la famille de jetons en cas de réutilisation
+- [x] Implémenter `POST /auth/logout` et `POST /auth/logout-all`
+- [x] Invalider les jetons d'accès via `token_version`
+- [x] Mettre à niveau les empreintes lorsque les paramètres argon2id changent
+- [x] Tester jetons expirés, falsifiés, `alg=none`, réutilisés et rafraîchissements concurrents
 
 **Terminé lorsque :** la réutilisation d'un jeton de renouvellement coupe toute la session associée.
 
@@ -162,6 +162,7 @@ légitime.
 - [ ] Ajouter Redis, protégé par mot de passe et non exposé
 - [ ] Implémenter un limiteur de débit à compteurs atomiques
 - [ ] Limiter connexion, inscription et réinitialisation par IP et par compte
+- [ ] Limiter le renouvellement (30/min) et les routes authentifiées (120/min) par utilisateur
 - [ ] Appliquer une temporisation progressive plutôt qu'un verrouillage définitif
 - [ ] Rejeter les requêtes d'authentification si Redis est indisponible
 - [ ] N'accepter `X-Forwarded-For` que depuis des proxys de confiance

@@ -2,8 +2,9 @@
 
 from pathlib import Path
 from typing import Literal, Self
+from urllib.parse import unquote, urlsplit
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, IPvAnyNetwork, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -27,6 +28,8 @@ _ENVIRONMENTS_WITHOUT_DATABASE_TLS: frozenset[Environment] = frozenset({"develop
 # migration ou avec un superutilisateur, qui annuleraient le moindre privilège.
 APP_DATABASE_ROLE = "taskhandler_app"
 MIGRATION_DATABASE_ROLE = "taskhandler_migrator"
+# Utilisateur Redis imposé : c'est le seul dont les droits ACL sont restreints au limiteur.
+REDIS_USER = "taskhandler_app"
 
 _DATABASE_DRIVER = "postgresql+asyncpg"
 # 64 caractères hexadécimaux = 256 bits, le minimum exigé pour une clé HMAC-SHA256.
@@ -47,6 +50,42 @@ _PLACEHOLDER_MARKERS = (
 )
 
 
+# requires : `password` est le mot de passe extrait d'une URL de connexion, ou `None`.
+# assigns  : rien (fonction pure).
+# ensures  : ne renvoie rien si le mot de passe est assez long et n'est pas une valeur d'exemple ;
+#            sinon lève `ValueError`, sans jamais recopier le mot de passe.
+def _ensure_strong_password(password: str | None) -> None:
+    if not isinstance(password, str) or len(password) < _MIN_DATABASE_PASSWORD_LENGTH:
+        raise ValueError(
+            f"mot de passe absent ou de moins de {_MIN_DATABASE_PASSWORD_LENGTH} signes"
+        )
+    normalized_password = password.lower()
+    if any(marker in normalized_password for marker in _PLACEHOLDER_MARKERS):
+        raise ValueError("le mot de passe correspond à une valeur d'exemple")
+
+
+# requires : `url` est l'URL Redis brute à contrôler.
+# assigns  : rien (fonction pure).
+# ensures  : ne renvoie rien si l'URL est sûre ; lève `ValueError` sinon, sans recopier l'URL.
+def _validate_redis_url(url: SecretStr, *, require_tls: bool) -> None:
+    try:
+        parts = urlsplit(url.get_secret_value())
+        hostname, port = parts.hostname, parts.port
+    except ValueError:
+        raise ValueError("URL Redis illisible") from None
+
+    if parts.scheme not in {"redis", "rediss"}:
+        raise ValueError("le schéma doit être redis:// ou rediss://")
+    # `rediss://` chiffre la connexion ; redis-py vérifie alors le certificat par défaut.
+    if require_tls and parts.scheme != "rediss":
+        raise ValueError("rediss:// est obligatoire dans cet environnement")
+    if parts.username != REDIS_USER:
+        raise ValueError(f"l'utilisateur Redis doit être {REDIS_USER}")
+    if not hostname or port is None:
+        raise ValueError("l'hôte et le port Redis sont obligatoires")
+    _ensure_strong_password(unquote(parts.password) if parts.password is not None else None)
+
+
 # requires : `url` est l'URL brute à contrôler, `expected_role` le seul rôle accepté.
 # assigns  : rien (fonction pure).
 # ensures  : ne renvoie rien si l'URL est sûre ; lève `ValueError` sinon. Le message d'erreur
@@ -65,14 +104,7 @@ def _validate_database_url(url: SecretStr, *, expected_role: str, require_tls: b
     if not parsed_url.host or not parsed_url.database:
         raise ValueError("l'hôte et le nom de la base sont obligatoires")
 
-    password = parsed_url.password
-    if not isinstance(password, str) or len(password) < _MIN_DATABASE_PASSWORD_LENGTH:
-        raise ValueError(
-            f"mot de passe absent ou de moins de {_MIN_DATABASE_PASSWORD_LENGTH} signes"
-        )
-    normalized_password = password.lower()
-    if any(marker in normalized_password for marker in _PLACEHOLDER_MARKERS):
-        raise ValueError("le mot de passe de la base correspond à une valeur d'exemple")
+    _ensure_strong_password(parsed_url.password)
 
     # `verify-full` contrôle le certificat et le nom d'hôte : `require` chiffrerait la connexion
     # sans empêcher un intermédiaire de se faire passer pour le serveur.
@@ -128,6 +160,24 @@ class Settings(BaseSettings):
     refresh_token_idle_days: int = Field(default=7, ge=1, le=30)
     session_max_days: int = Field(default=30, ge=1, le=90)
 
+    # Redis porte les compteurs de limitation de débit. Sans valeur par défaut : c'est un secret.
+    redis_url: SecretStr
+    # Le préfixe doit rester dans `rl:*`, seul espace autorisé par les droits ACL de Redis.
+    rate_limit_key_prefix: str = Field(default="rl:", pattern=r"^rl:[a-z0-9:]{0,40}$")
+    # Seuls ces réseaux peuvent fixer l'IP du client via `X-Forwarded-For`. Vide par défaut :
+    # sans proxy déclaré, l'en-tête est ignoré, car n'importe quel client peut l'écrire.
+    trusted_proxies: tuple[IPvAnyNetwork, ...] = ()
+    # Taille maximale d'un corps de requête, 1 Mio par défaut (OWASP API4).
+    max_request_body_bytes: int = Field(default=1_048_576, ge=1024, le=10_485_760)
+
+    # Limites par fenêtre glissante, bornées pour qu'une erreur de réglage ne les supprime pas.
+    login_ip_limit_per_minute: int = Field(default=20, ge=1, le=1000)
+    login_account_limit_per_minute: int = Field(default=5, ge=1, le=100)
+    register_ip_limit_per_hour: int = Field(default=5, ge=1, le=1000)
+    register_email_limit_per_hour: int = Field(default=3, ge=1, le=100)
+    refresh_user_limit_per_minute: int = Field(default=30, ge=1, le=1000)
+    authenticated_user_limit_per_minute: int = Field(default=120, ge=1, le=10_000)
+
     # requires : les champs ont passé leur validation individuelle.
     # assigns  : rien.
     # ensures  : renvoie la configuration si l'URL est sûre ; sinon lève `ValueError`.
@@ -142,8 +192,8 @@ class Settings(BaseSettings):
 
     # requires : les champs ont passé leur validation individuelle.
     # assigns  : rien.
-    # ensures  : renvoie la configuration si la clé et les durées de session sont sûres ; sinon
-    #            lève `ValueError`, sans recopier la clé.
+    # ensures  : renvoie la configuration si la clé, Redis et les durées de session sont sûrs ;
+    #            sinon lève `ValueError`, sans recopier aucun secret.
     @model_validator(mode="after")
     def _check_sessions(self) -> Self:
         secret = self.jwt_secret.get_secret_value()
@@ -155,6 +205,10 @@ class Settings(BaseSettings):
             raise ValueError("la clé JWT est trop répétitive pour être aléatoire")
         if any(marker in secret.lower() for marker in _PLACEHOLDER_MARKERS):
             raise ValueError("la clé JWT correspond à une valeur d'exemple")
+        _validate_redis_url(
+            self.redis_url,
+            require_tls=self.environment not in _ENVIRONMENTS_WITHOUT_DATABASE_TLS,
+        )
         if self.refresh_token_idle_days > self.session_max_days:
             raise ValueError("l'inactivité permise dépasse la durée maximale d'une session")
         return self

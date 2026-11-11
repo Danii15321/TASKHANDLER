@@ -10,7 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.passwords import PasswordHasherService
+from app.core.rate_limit import RateLimiter
 from app.core.tokens import create_access_token, hash_refresh_token, new_refresh_token
+from app.modules.auth.limits import (
+    LOGIN_BACKOFF_SCOPE,
+    login_account_limit,
+    login_ip_limit,
+    refresh_user_limit,
+    register_email_limit,
+    register_ip_limit,
+)
 from app.modules.auth.models import (
     REASON_LOGOUT,
     REASON_LOGOUT_ALL,
@@ -88,6 +97,17 @@ async def register_user(
             raise EmailAlreadyRegisteredError from None
         raise
     return user
+
+
+# requires : `email` est normalisé, `client_ip` vient de `get_client_ip`.
+# assigns  : enregistre la demande dans les compteurs d'inscription.
+# ensures  : se termine si l'IP et l'adresse sont sous leurs limites ; sinon lève une erreur du
+#            limiteur. Appelé avant le hachage : une inscription refusée ne coûte rien au serveur.
+async def guard_registration(
+    limiter: RateLimiter, settings: Settings, *, email: str, client_ip: str
+) -> None:
+    await limiter.hit(register_ip_limit(settings), client_ip)
+    await limiter.hit(register_email_limit(settings), email)
 
 
 # requires : `email` est normalisé, `password` est normalisé en NFKC.
@@ -185,9 +205,15 @@ async def open_session(
 # requires : `refresh_token` a le format d'un jeton, `now` porte un fuseau horaire.
 # assigns  : révoque le jeton utilisé et en enregistre un nouveau, dans une seule transaction ;
 #            en cas de réutilisation, révoque toute la session.
-# ensures  : renvoie une nouvelle paire de jetons ; sinon lève `InvalidRefreshTokenError`.
+# ensures  : renvoie une nouvelle paire de jetons ; sinon lève `InvalidRefreshTokenError`, ou une
+#            erreur du limiteur si l'utilisateur renouvelle trop souvent.
 async def rotate_refresh_token(
-    session: AsyncSession, settings: Settings, *, refresh_token: str, now: datetime
+    session: AsyncSession,
+    settings: Settings,
+    limiter: RateLimiter,
+    *,
+    refresh_token: str,
+    now: datetime,
 ) -> IssuedTokens:
     # Le verrou `FOR UPDATE` est tenu jusqu'au commit : un second renouvellement simultané du
     # même jeton attend, puis voit ce jeton révoqué, et il est traité comme une réutilisation.
@@ -217,6 +243,9 @@ async def rotate_refresh_token(
     user = await get_active_user(session, stored.user_id)
     if user is None:
         raise InvalidRefreshTokenError
+    # Limite appliquée après la détection de réutilisation : un attaquant ne doit pas pouvoir
+    # échapper à la coupure de la session en épuisant d'abord la limite.
+    await limiter.hit(refresh_user_limit(settings), str(user.id))
 
     await revoke_refresh_token(session, token_id=stored.id, reason=REASON_ROTATED)
     tokens = await _issue_tokens(
@@ -251,3 +280,34 @@ async def close_all_sessions(session: AsyncSession, *, user_id: uuid.UUID) -> No
     await increment_token_version(session, user_id=user_id)
     await session.commit()
     audit_logger.info("logout_all", extra={"user_id": str(user_id)})
+
+
+# requires : `email` et `password` sont normalisés, `client_ip` vient de `get_client_ip`.
+# assigns  : met à jour les compteurs et la temporisation ; ouvre une session en cas de succès.
+# ensures  : renvoie une paire de jetons ; lève `InvalidCredentialsError` si l'authentification
+#            échoue, ou une erreur du limiteur si une limite ou la temporisation s'applique.
+async def log_in(
+    session: AsyncSession,
+    hasher: PasswordHasherService,
+    limiter: RateLimiter,
+    settings: Settings,
+    *,
+    email: str,
+    password: str,
+    client_ip: str,
+    now: datetime,
+) -> IssuedTokens:
+    # Couple IP + compte : une attaque menée depuis une autre IP ne ralentit jamais la victime,
+    # qui se connecte depuis la sienne. Personne ne peut ainsi bloquer un compte à distance.
+    pair = f"{client_ip}|{email}"
+    await limiter.hit(login_ip_limit(settings), client_ip)
+    await limiter.hit(login_account_limit(settings), pair)
+    await limiter.ensure_backoff_elapsed(LOGIN_BACKOFF_SCOPE, pair)
+    try:
+        user = await authenticate(session, hasher, email=email, password=password)
+    except InvalidCredentialsError:
+        # Le compte inconnu est compté comme les autres : la temporisation ne révèle rien.
+        await limiter.record_failure(LOGIN_BACKOFF_SCOPE, pair)
+        raise
+    await limiter.reset_failures(LOGIN_BACKOFF_SCOPE, pair)
+    return await open_session(session, settings, user, now=now)
