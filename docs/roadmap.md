@@ -28,7 +28,7 @@ phase, pas avant.
 | 8 | Tâches | Terminée |
 | 9 | Grille hebdomadaire | Terminée |
 | 10 | Durcissement, RGPD et audit | Terminée |
-| 11 | Conteneurisation et déploiement | En relecture |
+| 11 | Conteneurisation et déploiement | Terminée |
 
 ---
 
@@ -264,17 +264,17 @@ données.
 
 **Objectif :** un déploiement reproductible, minimal et restaurable.
 
-- [ ] Rédiger `docs/steps/step-11.md`
-- [ ] Créer un `Dockerfile` multi-étapes, utilisateur non root, image épinglée par empreinte
-- [ ] Exécuter les migrations dans une étape séparée, avec le rôle dédié
-- [ ] Placer TLS et les limites de requêtes dans un proxy inverse
-- [ ] Imposer HSTS en production et TLS vers PostgreSQL
-- [ ] Injecter les secrets par l'environnement d'exécution et documenter leur rotation
-- [ ] Générer un SBOM et analyser l'image dans la CI
-- [ ] Automatiser des sauvegardes chiffrées
-- [ ] Réaliser et chronométrer un test de restauration
-- [ ] Rédiger le plan de réponse à incident
-- [ ] Compléter la section Installation du README
+- [x] Rédiger `docs/steps/step-11.md`
+- [x] Créer un `Dockerfile` multi-étapes, utilisateur non root, image épinglée par empreinte
+- [x] Exécuter les migrations dans une étape séparée, avec le rôle dédié
+- [x] Placer TLS et les limites de requêtes dans un proxy inverse
+- [x] Imposer HSTS en production et TLS vers PostgreSQL
+- [x] Injecter les secrets par l'environnement d'exécution et documenter leur rotation
+- [x] Générer un SBOM et analyser l'image dans la CI
+- [x] Automatiser des sauvegardes chiffrées
+- [x] Réaliser et chronométrer un test de restauration
+- [x] Rédiger le plan de réponse à incident
+- [x] Compléter la section Installation du README
 
 **Terminé lorsque :** une restauration complète a été réalisée à partir d'une sauvegarde.
 
