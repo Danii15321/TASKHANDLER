@@ -214,6 +214,9 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     # génère un en mode développement). Un test qui veut un fichier le passe par `_env_file`.
     monkeypatch.setitem(Settings.model_config, "env_file", None)
     monkeypatch.setitem(MigrationSettings.model_config, "env_file", None)
+    # Même règle pour les secrets Docker : un `/run/secrets` présent sur la machine est ignoré.
+    monkeypatch.setitem(Settings.model_config, "secrets_dir", None)
+    monkeypatch.setitem(MigrationSettings.model_config, "secrets_dir", None)
     monkeypatch.setenv("TASKHANDLER_JWT_SECRET", TEST_JWT_SECRET)
     monkeypatch.setenv("TASKHANDLER_REDIS_URL", unreachable_redis_url().get_secret_value())
     # Réglages d'e-mail valables partout, production comprise ; le port 1 est fermé.

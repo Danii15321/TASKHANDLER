@@ -9,10 +9,12 @@ from pydantic import SecretStr, ValidationError
 from app.core.config import (
     APP_DATABASE_ROLE,
     MIGRATION_DATABASE_ROLE,
+    SECRETS_DIR,
     MigrationSettings,
     Settings,
+    secrets_directory,
 )
-from tests.conftest import UNUSED_CREDENTIAL, unreachable_database_url
+from tests.conftest import TEST_JWT_SECRET, UNUSED_CREDENTIAL, unreachable_database_url
 
 ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 ENV_EXAMPLE_PLACEHOLDER = "remplacer-par-un-secret-aleatoire"
@@ -241,3 +243,75 @@ def test_migration_settings_require_migrator_role() -> None:
 def test_migration_settings_require_verified_tls_in_production() -> None:
     with pytest.raises(ValidationError):
         MigrationSettings(database_url=url_for_role(MIGRATION_DATABASE_ROLE), _env_file=None)
+
+
+# requires : `tmp_path` est un dossier vide propre au test.
+# assigns  : rien.
+# ensures  : le dossier des secrets n'est utilisé que s'il existe : en développement, aucun
+#            avertissement n'est émis pour un dossier `/run/secrets` absent.
+def test_secrets_directory_is_used_only_when_present(tmp_path: Path) -> None:
+    assert str(SECRETS_DIR) == "/run/secrets"
+    assert secrets_directory(tmp_path) == tmp_path
+    assert secrets_directory(tmp_path / "absent") is None
+
+
+# requires : `directory` est un dossier, `values` associe un nom de variable à sa valeur.
+# assigns  : écrit un fichier par secret, lisible par son seul propriétaire.
+# ensures  : les fichiers existent, terminés par un saut de ligne comme le ferait un éditeur.
+def write_secret_files(directory: Path, values: dict[str, str]) -> None:
+    for name, value in values.items():
+        secret_file = directory / name.lower()
+        secret_file.write_text(f"{value}\n", encoding="utf-8")
+        secret_file.chmod(0o400)
+
+
+# requires : `tmp_path` est un dossier vide propre au test.
+# assigns  : retire les secrets de l'environnement, le temps du test.
+# ensures  : en production, les secrets sont lus dans des fichiers (secrets Docker), sans passer
+#            par l'environnement du processus, et le saut de ligne final est ignoré.
+def test_reads_secrets_from_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("TASKHANDLER_JWT_SECRET", "TASKHANDLER_REDIS_URL", "TASKHANDLER_SMTP_PASSWORD"):
+        monkeypatch.delenv(name)
+    database_url = unreachable_database_url("?ssl=verify-full").get_secret_value()
+    write_secret_files(
+        tmp_path,
+        {
+            "TASKHANDLER_DATABASE_URL": database_url,
+            "TASKHANDLER_JWT_SECRET": TEST_JWT_SECRET,
+            "TASKHANDLER_REDIS_URL": f"rediss://taskhandler_app:{UNUSED_CREDENTIAL}@redis:6380/0",
+            "TASKHANDLER_SMTP_PASSWORD": UNUSED_CREDENTIAL,
+        },
+    )
+    monkeypatch.setitem(Settings.model_config, "secrets_dir", tmp_path)
+
+    settings = Settings()
+
+    assert settings.environment == "production"
+    assert settings.database_url.get_secret_value() == database_url
+    assert settings.jwt_secret.get_secret_value() == TEST_JWT_SECRET
+
+
+# requires : `tmp_path` est un dossier vide propre au test.
+# assigns  : remplace la clé JWT de l'environnement par un fichier, le temps du test.
+# ensures  : un secret lu dans un fichier passe par la même validation : trop court, il empêche
+#            le démarrage, sans que l'erreur ne recopie sa valeur.
+def test_weak_secret_file_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TASKHANDLER_JWT_SECRET")
+    write_secret_files(tmp_path, {"TASKHANDLER_JWT_SECRET": "trop-court"})
+    monkeypatch.setitem(Settings.model_config, "secrets_dir", tmp_path)
+
+    with pytest.raises(ValidationError) as error:
+        Settings(environment="test", database_url=unreachable_database_url())
+
+    assert "trop-court" not in str(error.value)
+
+
+# requires : `tmp_path` est un dossier vide propre au test.
+# assigns  : rien.
+# ensures  : la migration lit son propre fichier secret, distinct de celui de l'API.
+def test_migration_reads_its_secret_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    url = url_for_role(MIGRATION_DATABASE_ROLE, TLS_QUERY).get_secret_value()
+    write_secret_files(tmp_path, {"TASKHANDLER_MIGRATION_DATABASE_URL": url})
+    monkeypatch.setitem(MigrationSettings.model_config, "secrets_dir", tmp_path)
+
+    assert MigrationSettings().database_url.get_secret_value() == url

@@ -27,8 +27,8 @@ phase, pas avant.
 | 7 | Vérification d'e-mail et réinitialisation | Terminée |
 | 8 | Tâches | Terminée |
 | 9 | Grille hebdomadaire | Terminée |
-| 10 | Durcissement, RGPD et audit | En relecture |
-| 11 | Conteneurisation et déploiement | À faire |
+| 10 | Durcissement, RGPD et audit | Terminée |
+| 11 | Conteneurisation et déploiement | En relecture |
 
 ---
 
@@ -243,18 +243,18 @@ renvoie aucune description.
 **Objectif :** vérifier l'ensemble de l'API face à un référentiel, et couvrir le cycle de vie des
 données.
 
-- [ ] Rédiger `docs/steps/step-10.md`
-- [ ] Implémenter `POST /users/me/password` avec réauthentification
-- [ ] Implémenter `GET /users/me`, puis `DELETE /users/me` avec réauthentification
-- [ ] Implémenter `GET /users/me/export`
-- [ ] Définir et appliquer la durée de conservation, puis purger les jetons expirés
-- [ ] Ajouter les en-têtes de sécurité, `TrustedHostMiddleware` et une liste CORS explicite
-- [ ] Journaliser les événements d'audit sans donnée sensible
-- [ ] Évaluer la sécurité au niveau des lignes de PostgreSQL (RLS) et consigner la décision
-- [ ] Parcourir l'OWASP API Security Top 10 point par point
-- [ ] Vérifier les exigences applicables de l'OWASP ASVS
-- [ ] Lancer un scan dynamique avec OWASP ZAP sur l'API locale
-- [ ] Corriger chaque constat ou documenter son acceptation
+- [x] Rédiger `docs/steps/step-10.md`
+- [x] Implémenter `POST /users/me/password` avec réauthentification
+- [x] Implémenter `GET /users/me`, puis `DELETE /users/me` avec réauthentification
+- [x] Implémenter `GET /users/me/export`
+- [x] Définir et appliquer la durée de conservation, puis purger les jetons expirés
+- [x] Ajouter les en-têtes de sécurité, `TrustedHostMiddleware` et une liste CORS explicite
+- [x] Journaliser les événements d'audit sans donnée sensible
+- [x] Évaluer la sécurité au niveau des lignes de PostgreSQL (RLS) et consigner la décision
+- [x] Parcourir l'OWASP API Security Top 10 point par point
+- [x] Vérifier les exigences applicables de l'OWASP ASVS
+- [x] Lancer un scan dynamique avec OWASP ZAP sur l'API locale
+- [x] Corriger chaque constat ou documenter son acceptation
 
 **Terminé lorsque :** chaque point du Top 10 a une preuve : test, configuration ou décision écrite.
 

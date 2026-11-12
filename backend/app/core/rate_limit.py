@@ -8,9 +8,10 @@ toutes les deux.
 import hashlib
 import logging
 import math
+import ssl
 import uuid
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
 from redis.asyncio import Redis
@@ -233,7 +234,28 @@ def create_redis_client(settings: Settings) -> Redis:
         socket_connect_timeout=_REDIS_TIMEOUT_SECONDS,
         # Pas de nouvel essai automatique : un Redis lent doit donner une réponse rapide, même 503.
         retry_on_timeout=False,
+        **redis_tls_options(settings),
     )
+
+
+# requires : `settings` est valide.
+# assigns  : rien.
+# ensures  : avec `rediss://`, renvoie les options qui imposent un certificat valide pour le nom
+#            d'hôte, TLS 1.2 au moins et l'autorité interne ; avec `redis://`, aucune option.
+def redis_tls_options(settings: Settings) -> dict[str, Any]:
+    if not settings.redis_url.get_secret_value().startswith("rediss://"):
+        return {}
+    # Valeurs explicites plutôt que les défauts de redis-py : un changement de défaut dans une
+    # future version ne doit pas pouvoir désactiver la vérification sans bruit.
+    options: dict[str, Any] = {
+        "ssl_cert_reqs": "required",
+        "ssl_check_hostname": True,
+        "ssl_min_version": ssl.TLSVersion.TLSv1_2,
+    }
+    if settings.tls_ca_file is not None:
+        # redis-py ajoute ce fichier aux autorités du système, comme `client_tls_context`.
+        options["ssl_ca_certs"] = str(settings.tls_ca_file)
+    return options
 
 
 # requires : l'application a été assemblée par `create_app`.

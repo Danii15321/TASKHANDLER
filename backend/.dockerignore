@@ -1,0 +1,14 @@
+# Liste autorisée : tout est exclu, puis seuls les fichiers nécessaires à l'image sont admis.
+# Un `.env`, une clé, un certificat ou une sauvegarde ne peuvent donc jamais entrer dans l'image,
+# même ajoutés plus tard au dossier.
+*
+!app/
+!migrations/
+!alembic.ini
+!pyproject.toml
+!uv.lock
+!.python-version
+
+# Caches locaux, même dans les dossiers admis.
+**/__pycache__
+**/*.pyc
