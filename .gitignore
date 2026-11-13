@@ -34,3 +34,7 @@ htmlcov/
 .idea/
 .vscode/
 .DS_Store
+
+# Mémoire locale de l'atelier d'architecture (Atelier-C), non versionnée.
+.atelier/
+.atelier-local/
