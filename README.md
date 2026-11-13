@@ -5,8 +5,8 @@ TaskHandler est une application web qui permet de **planifier ses tâches** dans
 Ce dépôt couvre pour l'instant uniquement le **backend** : une API REST construite avec FastAPI et
 PostgreSQL. Le frontend sera traité plus tard.
 
-> **État du projet :** API complète et durcie (compte, RGPD, RLS, audit OWASP) ; déploiement à venir. L'avancement réel se lit dans la
-> [roadmap](docs/roadmap.md). Tout ce qui suit décrit la **cible** du projet.
+> **État du projet :** API complète, durcie et conteneurisée, avec sauvegardes chiffrées et
+> restauration testée. L'avancement réel se lit dans la [roadmap](docs/roadmap.md).
 
 ---
 
@@ -25,17 +25,10 @@ PostgreSQL. Le frontend sera traité plus tard.
 - Une tâche peut être placée sur plusieurs jours, et un jour contient plusieurs tâches (relation N-N)
 - Pour chaque jour, la tâche a une heure de début et une durée en heures entières, sans échéance
 - Statut par jour (`todo`, `in_progress`, `done`, `cancelled`) et priorité (`low`, `medium`, `high`)
+- Grille visée : **une ligne par jour, une colonne par heure** ; elle n'affiche que le titre, la
+  description vient au clic. L'API sert donc une grille légère, puis le détail d'une tâche.
 
-### Grille hebdomadaire (interface visée)
-
-Le futur frontend affichera un grand tableau : **une ligne par jour, une colonne par heure**. Une
-tâche d'une heure occupe une case, une tâche de deux heures en occupe deux, et ainsi de suite. La
-grille n'affiche que le titre ; la description apparaît au clic. L'API sert donc ces deux besoins
-séparément : une grille légère, puis le détail d'une tâche.
-
-### Hors périmètre de la première version
-
-Frontend, tâches récurrentes, partage entre utilisateurs, notifications, authentification tierce.
+Hors périmètre de la première version : frontend, tâches récurrentes, partage, notifications.
 
 ---
 
@@ -56,6 +49,7 @@ Frontend, tâches récurrentes, partage entre utilisateurs, notifications, authe
 | Qualité | ruff, mypy (mode strict), pre-commit, GitHub Actions | Erreurs détectées avant la relecture |
 | Sécurité outillée | pip-audit, gitleaks, règles Bandit de ruff | Dépendances, secrets, code |
 | Dépendances | uv + fichier de verrouillage | Installations reproductibles |
+| Déploiement | Docker non root, nginx, TLS partout, sauvegardes `age` | Reproductible et restaurable |
 
 Chaque outil est introduit **par la phase qui en a besoin**, jamais à l'avance.
 
@@ -72,7 +66,10 @@ Le code est organisé par **domaine métier**, et chaque domaine est découpé e
 ├── .github/workflows/       # Intégration continue
 ├── docs/
 │   ├── roadmap.md           # Phases et tâches à cocher
-│   └── steps/step-x.md      # Guide pédagogique détaillé de chaque phase
+│   ├── steps/step-x.md      # Guide pédagogique détaillé de chaque phase
+│   ├── exploitation.md      # Sauvegardes, restauration, rotation des secrets
+│   └── incident-response.md # Plan de réponse à incident
+├── deploy/                  # Pile de production : compose, nginx, PostgreSQL, sauvegardes
 └── backend/
     ├── app/
     │   ├── main.py          # Assemblage de l'application
@@ -109,12 +106,9 @@ Dans chaque module, les responsabilités sont séparées :
 | `tasks` | `id`, `user_id`, `title`, `description`, `priority` | Tâches |
 | `task_days` | `task_id`, `user_id`, `day`, `start_hour`, `duration_hours`, `status`, `completed_at` — clé primaire (`task_id`, `day`) | Association N-N : placement d'une tâche sur un jour |
 
-Conventions : identifiants UUID, horodatages `TIMESTAMPTZ` en UTC, jours en `DATE`, `created_at` et `updated_at` sur les
-tables métier, suppression en cascade des données d'un utilisateur.
-
-Dans `task_days`, `day` est une date réelle et les heures sont des entiers de 0 à 23, en heure locale.
-PostgreSQL garantit qu'une tâche ne dépasse pas minuit et que deux tâches d'un même utilisateur
-n'occupent jamais la même case.
+Conventions : identifiants UUID, horodatages `TIMESTAMPTZ` en UTC, jours en `DATE`, heures de 0
+à 23, suppression en cascade. PostgreSQL garantit qu'une tâche ne dépasse pas minuit et que deux
+tâches d'un même utilisateur n'occupent jamais la même case.
 
 ---
 
@@ -166,14 +160,7 @@ Le projet avance **phase par phase**, sans scaffold global.
 4. Aucun commit sans autorisation explicite ; `main` n'évolue que par pull request depuis `daniel_dev`.
 
 Toute fonction est abondamment commentée et précédée des étiquettes `requires`, `assigns` et
-`ensures`, décrites en français :
-
-```python
-# requires : `email` est une adresse déjà normalisée.
-# assigns  : rien (lecture seule).
-# ensures  : renvoie l'utilisateur correspondant, ou `None` s'il n'existe pas.
-async def get_user_by_email(session: AsyncSession, email: str) -> User | None: ...
-```
+`ensures`, décrites en français (format détaillé dans [CLAUDE.md](CLAUDE.md)).
 
 Tailles maximales : 200 lignes pour `README.md`, `CLAUDE.md` et chaque `step-x.md`, 500 lignes pour
 `docs/roadmap.md`.
@@ -198,3 +185,16 @@ Pour lancer les tests, puis l'API en développement, toujours depuis `backend/` 
 uv run --locked pytest
 uv run --locked uvicorn app.main:create_app --factory --no-server-header --no-proxy-headers
 ```
+
+Pile de production, reproduite en local (TLS partout, secrets en fichiers, sauvegardes chiffrées),
+depuis `deploy/` :
+
+```bash
+scripts/init-local.sh
+docker compose -f compose.prod.yaml up --detach --wait --build
+docker compose -f compose.prod.yaml run --rm backup
+scripts/restore-check.sh
+```
+
+L'API répond sur `https://api.taskhandler.localhost:8443` (autorité : `local/certs/ca.crt`).
+Exploitation et incidents : [exploitation](docs/exploitation.md), [plan](docs/incident-response.md).

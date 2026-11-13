@@ -139,7 +139,8 @@ async def hash_password(plain: str) -> str:
 
 ## Configuration et secrets
 
-- Secrets uniquement dans l'environnement, chargés par pydantic-settings et typés `SecretStr`.
+- Secrets uniquement dans l'environnement ou, en production, dans des fichiers secrets montés en
+  lecture seule (`/run/secrets`), chargés par pydantic-settings et typés `SecretStr`.
 - Pas de valeur par défaut pour un secret. L'application refuse de démarrer si un secret manque, est
   trop court ou correspond à une valeur d'exemple.
 - `.env.example` ne contient que des valeurs factices. `.env` n'est jamais versionné.

@@ -10,6 +10,9 @@
 *.p12
 *.pfx
 
+# Pile de production locale : autorité, certificats, secrets, clé et sauvegardes générés.
+deploy/local/
+
 # Environnement virtuel Python, recréé à l'identique à partir de `uv.lock`.
 .venv/
 

@@ -27,8 +27,8 @@ phase, pas avant.
 | 7 | Vérification d'e-mail et réinitialisation | Terminée |
 | 8 | Tâches | Terminée |
 | 9 | Grille hebdomadaire | Terminée |
-| 10 | Durcissement, RGPD et audit | En relecture |
-| 11 | Conteneurisation et déploiement | À faire |
+| 10 | Durcissement, RGPD et audit | Terminée |
+| 11 | Conteneurisation et déploiement | Terminée |
 
 ---
 
@@ -243,18 +243,18 @@ renvoie aucune description.
 **Objectif :** vérifier l'ensemble de l'API face à un référentiel, et couvrir le cycle de vie des
 données.
 
-- [ ] Rédiger `docs/steps/step-10.md`
-- [ ] Implémenter `POST /users/me/password` avec réauthentification
-- [ ] Implémenter `GET /users/me`, puis `DELETE /users/me` avec réauthentification
-- [ ] Implémenter `GET /users/me/export`
-- [ ] Définir et appliquer la durée de conservation, puis purger les jetons expirés
-- [ ] Ajouter les en-têtes de sécurité, `TrustedHostMiddleware` et une liste CORS explicite
-- [ ] Journaliser les événements d'audit sans donnée sensible
-- [ ] Évaluer la sécurité au niveau des lignes de PostgreSQL (RLS) et consigner la décision
-- [ ] Parcourir l'OWASP API Security Top 10 point par point
-- [ ] Vérifier les exigences applicables de l'OWASP ASVS
-- [ ] Lancer un scan dynamique avec OWASP ZAP sur l'API locale
-- [ ] Corriger chaque constat ou documenter son acceptation
+- [x] Rédiger `docs/steps/step-10.md`
+- [x] Implémenter `POST /users/me/password` avec réauthentification
+- [x] Implémenter `GET /users/me`, puis `DELETE /users/me` avec réauthentification
+- [x] Implémenter `GET /users/me/export`
+- [x] Définir et appliquer la durée de conservation, puis purger les jetons expirés
+- [x] Ajouter les en-têtes de sécurité, `TrustedHostMiddleware` et une liste CORS explicite
+- [x] Journaliser les événements d'audit sans donnée sensible
+- [x] Évaluer la sécurité au niveau des lignes de PostgreSQL (RLS) et consigner la décision
+- [x] Parcourir l'OWASP API Security Top 10 point par point
+- [x] Vérifier les exigences applicables de l'OWASP ASVS
+- [x] Lancer un scan dynamique avec OWASP ZAP sur l'API locale
+- [x] Corriger chaque constat ou documenter son acceptation
 
 **Terminé lorsque :** chaque point du Top 10 a une preuve : test, configuration ou décision écrite.
 
@@ -264,17 +264,17 @@ données.
 
 **Objectif :** un déploiement reproductible, minimal et restaurable.
 
-- [ ] Rédiger `docs/steps/step-11.md`
-- [ ] Créer un `Dockerfile` multi-étapes, utilisateur non root, image épinglée par empreinte
-- [ ] Exécuter les migrations dans une étape séparée, avec le rôle dédié
-- [ ] Placer TLS et les limites de requêtes dans un proxy inverse
-- [ ] Imposer HSTS en production et TLS vers PostgreSQL
-- [ ] Injecter les secrets par l'environnement d'exécution et documenter leur rotation
-- [ ] Générer un SBOM et analyser l'image dans la CI
-- [ ] Automatiser des sauvegardes chiffrées
-- [ ] Réaliser et chronométrer un test de restauration
-- [ ] Rédiger le plan de réponse à incident
-- [ ] Compléter la section Installation du README
+- [x] Rédiger `docs/steps/step-11.md`
+- [x] Créer un `Dockerfile` multi-étapes, utilisateur non root, image épinglée par empreinte
+- [x] Exécuter les migrations dans une étape séparée, avec le rôle dédié
+- [x] Placer TLS et les limites de requêtes dans un proxy inverse
+- [x] Imposer HSTS en production et TLS vers PostgreSQL
+- [x] Injecter les secrets par l'environnement d'exécution et documenter leur rotation
+- [x] Générer un SBOM et analyser l'image dans la CI
+- [x] Automatiser des sauvegardes chiffrées
+- [x] Réaliser et chronométrer un test de restauration
+- [x] Rédiger le plan de réponse à incident
+- [x] Compléter la section Installation du README
 
 **Terminé lorsque :** une restauration complète a été réalisée à partir d'une sauvegarde.
 

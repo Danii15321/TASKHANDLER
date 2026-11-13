@@ -1,7 +1,6 @@
 """Envoi des e-mails par SMTP, derrière une interface remplaçable dans les tests."""
 
 import smtplib
-import ssl
 from dataclasses import dataclass, field
 from email.message import EmailMessage
 from typing import Annotated, Protocol
@@ -10,6 +9,7 @@ import anyio.to_thread
 from fastapi import Depends, Request
 
 from app.core.config import Settings
+from app.core.tls import client_tls_context
 
 # Un serveur SMTP lent ne doit pas immobiliser un fil d'exécution indéfiniment.
 _SMTP_TIMEOUT_SECONDS = 10
@@ -64,8 +64,8 @@ class SmtpEmailSender:
         message["Subject"] = email.subject
         message.set_content(email.body)
 
-        # Contexte par défaut : certificat et nom d'hôte du serveur SMTP vérifiés.
-        context = ssl.create_default_context()
+        # Certificat et nom d'hôte du serveur SMTP vérifiés, TLS 1.2 au moins.
+        context = client_tls_context(settings)
         smtp: smtplib.SMTP
         if settings.smtp_security == "tls":
             smtp = smtplib.SMTP_SSL(

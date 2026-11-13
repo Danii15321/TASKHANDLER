@@ -3,10 +3,10 @@
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
-from sqlalchemy import Connection, event, text
+from sqlalchemy import Connection, event, make_url, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import Session, SessionTransaction
 
 from app.core.config import Settings
+from app.core.tls import client_tls_context
 
 # Une connexion n'est pas conservée indéfiniment : un serveur redémarré ou un pare-feu qui
 # coupe les connexions anciennes ne doit pas laisser de connexions mortes dans le pool.
@@ -26,10 +27,38 @@ _COMMAND_TIMEOUT_MARGIN_SECONDS = 1.0
 
 
 # requires : `settings` est valide.
+# assigns  : rien.
+# ensures  : renvoie les options de connexion d'asyncpg : délais imposés par le serveur et, si
+#            l'URL exige `ssl=verify-full`, le contexte TLS qui connaît l'autorité interne.
+def database_connect_args(settings: Settings) -> dict[str, Any]:
+    statement_timeout_ms = settings.database_statement_timeout_ms
+    connect_args: dict[str, Any] = {
+        "timeout": settings.database_connect_timeout_seconds,
+        "command_timeout": statement_timeout_ms / 1000 + _COMMAND_TIMEOUT_MARGIN_SECONDS,
+        # Ces réglages s'appliquent dès l'ouverture de la connexion : aucune requête ne
+        # peut s'exécuter sans eux, et la limite est appliquée par PostgreSQL lui-même.
+        "server_settings": {
+            "application_name": "taskhandler-api",
+            "timezone": "UTC",
+            "statement_timeout": str(statement_timeout_ms),
+            "lock_timeout": str(settings.database_lock_timeout_ms),
+            "idle_in_transaction_session_timeout": str(
+                settings.database_idle_transaction_timeout_ms
+            ),
+        },
+    }
+    # SQLAlchemy transmet les paramètres à asyncpg un par un : `sslrootcert` ne peut pas passer
+    # par l'URL. Le contexte remplace donc `ssl=verify-full` avec les mêmes vérifications
+    # (certificat et nom d'hôte), plus l'autorité interne.
+    if make_url(settings.database_url.get_secret_value()).query.get("ssl") == "verify-full":
+        connect_args["ssl"] = client_tls_context(settings)
+    return connect_args
+
+
+# requires : `settings` est valide.
 # assigns  : rien (aucune connexion n'est ouverte avant la première requête).
 # ensures  : renvoie un moteur au pool borné, dont chaque connexion impose ses délais.
 def create_database_engine(settings: Settings) -> AsyncEngine:
-    statement_timeout_ms = settings.database_statement_timeout_ms
     return create_async_engine(
         settings.database_url.get_secret_value(),
         # Les valeurs liées peuvent être des données personnelles : elles ne doivent apparaître
@@ -41,21 +70,7 @@ def create_database_engine(settings: Settings) -> AsyncEngine:
         pool_recycle=_POOL_RECYCLE_SECONDS,
         # Teste la connexion avant de la confier à une requête.
         pool_pre_ping=True,
-        connect_args={
-            "timeout": settings.database_connect_timeout_seconds,
-            "command_timeout": statement_timeout_ms / 1000 + _COMMAND_TIMEOUT_MARGIN_SECONDS,
-            # Ces réglages s'appliquent dès l'ouverture de la connexion : aucune requête ne
-            # peut s'exécuter sans eux, et la limite est appliquée par PostgreSQL lui-même.
-            "server_settings": {
-                "application_name": "taskhandler-api",
-                "timezone": "UTC",
-                "statement_timeout": str(statement_timeout_ms),
-                "lock_timeout": str(settings.database_lock_timeout_ms),
-                "idle_in_transaction_session_timeout": str(
-                    settings.database_idle_transaction_timeout_ms
-                ),
-            },
-        },
+        connect_args=database_connect_args(settings),
     )
 
 

@@ -6,7 +6,7 @@ from typing import Literal, Self
 from urllib.parse import unquote, urlsplit
 
 from email_validator import EmailNotValidError, validate_email
-from pydantic import AnyHttpUrl, Field, IPvAnyNetwork, SecretStr, model_validator
+from pydantic import AnyHttpUrl, Field, FilePath, IPvAnyNetwork, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -18,6 +18,19 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = _BACKEND_ROOT / ".env"
 MIGRATION_ENV_FILE = _BACKEND_ROOT / ".env.migration"
+# Secrets Docker de la production : un fichier par secret, monté en lecture seule. Contrairement à
+# une variable d'environnement, un fichier n'apparaît ni dans `docker inspect`, ni dans
+# `/proc/<pid>/environ`, et n'est pas transmis aux processus enfants.
+SECRETS_DIR = Path("/run/secrets")
+
+
+# requires : `path` est le dossier de secrets attendu.
+# assigns  : rien (lecture seule du système de fichiers).
+# ensures  : renvoie `path` s'il existe, sinon `None` : en développement, sans dossier de
+#            secrets, pydantic-settings n'émet pas d'avertissement et lit l'environnement.
+def secrets_directory(path: Path) -> Path | None:
+    return path if path.is_dir() else None
+
 
 # Liste autorisée plutôt qu'interdite : tout nouvel environnement reste sans documentation
 # publique tant qu'il n'a pas été explicitement ajouté ici.
@@ -125,6 +138,9 @@ class Settings(BaseSettings):
         env_prefix="TASKHANDLER_",
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
+        # Fichier `taskhandler_jwt_secret`, par exemple. Une variable d'environnement de même nom
+        # reste prioritaire ; le saut de ligne final du fichier est ignoré.
+        secrets_dir=secrets_directory(SECRETS_DIR),
         # Une clé inconnue dans `.env` est souvent une faute de frappe : mieux vaut refuser de
         # démarrer que d'ignorer sans bruit un réglage de sécurité.
         extra="forbid",
@@ -168,6 +184,9 @@ class Settings(BaseSettings):
 
     # Redis porte les compteurs de limitation de débit. Sans valeur par défaut : c'est un secret.
     redis_url: SecretStr
+    # Certificat public de l'autorité interne qui signe ceux de PostgreSQL et de Redis. Il
+    # s'ajoute aux autorités du système ; un fichier absent empêche le démarrage.
+    tls_ca_file: FilePath | None = None
     # Le préfixe doit rester dans `rl:*`, seul espace autorisé par les droits ACL de Redis.
     rate_limit_key_prefix: str = Field(default="rl:", pattern=r"^rl:[a-z0-9:]{0,40}$")
     # Seuls ces réseaux peuvent fixer l'IP du client via `X-Forwarded-For`. Vide par défaut :
@@ -314,6 +333,8 @@ class MigrationSettings(BaseSettings):
         env_prefix="TASKHANDLER_MIGRATION_",
         env_file=MIGRATION_ENV_FILE,
         env_file_encoding="utf-8",
+        # Fichier `taskhandler_migration_database_url`, monté dans le seul conteneur de migration.
+        secrets_dir=secrets_directory(SECRETS_DIR),
         extra="forbid",
         frozen=True,
         hide_input_in_errors=True,

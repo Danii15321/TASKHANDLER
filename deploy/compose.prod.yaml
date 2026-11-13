@@ -1,0 +1,265 @@
+# Pile de production, reproduite en local. Depuis la racine du dépôt :
+#   deploy/scripts/init-local.sh                                    (une seule fois)
+#   docker compose -f deploy/compose.prod.yaml up --detach --wait
+# Seul nginx est joignable, sur https://api.taskhandler.localhost:8443 (127.0.0.1 uniquement).
+name: taskhandler-prod
+
+# Durcissement commun : système de fichiers en lecture seule, aucune capacité Linux, aucune
+# élévation de privilèges, nombre de processus borné.
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 100
+  restart: unless-stopped
+
+x-api-environment: &api-environment
+  TASKHANDLER_ENVIRONMENT: production
+  TASKHANDLER_LOG_LEVEL: INFO
+  # `127.0.0.1` : nom utilisé par la sonde de santé de l'image, depuis le conteneur lui-même.
+  TASKHANDLER_ALLOWED_HOSTS: '["api.taskhandler.localhost", "127.0.0.1"]'
+  # Seul nginx partage le réseau `edge` avec l'API : lui seul peut fixer `X-Forwarded-For`.
+  TASKHANDLER_TRUSTED_PROXIES: '["${TASKHANDLER_EDGE_SUBNET:-172.30.10.0/24}"]'
+  TASKHANDLER_TLS_CA_FILE: /run/certs/ca.crt
+  TASKHANDLER_SMTP_HOST: mailpit
+  TASKHANDLER_SMTP_PORT: "1025"
+  TASKHANDLER_SMTP_SECURITY: tls
+  TASKHANDLER_SMTP_USERNAME: taskhandler
+  TASKHANDLER_EMAIL_FROM: ne-pas-repondre@taskhandler.fr
+  TASKHANDLER_FRONTEND_BASE_URL: https://app.taskhandler.localhost
+
+services:
+  postgres:
+    image: postgres:18-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+    <<: *hardened
+    # L'entrypoint officiel démarre en root pour préparer les fichiers, puis passe à `postgres` :
+    # seules les capacités de ce changement d'utilisateur sont rendues.
+    read_only: false
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    command: ["bash", "/usr/local/bin/start-postgres.sh"]
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password, migrator_password, app_password, backup_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./postgres/start-postgres.sh:/usr/local/bin/start-postgres.sh:ro
+      - ./postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-init-roles.sh:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./local/certs/postgres.crt:/run/tls/postgres.crt:ro
+      - ./local/certs/postgres.key:/run/tls/postgres.key:ro
+    tmpfs:
+      - /run/postgres-tls:mode=0700
+      - /var/run/postgresql
+      - /tmp
+    networks: [data]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "pg_isready", "--host=127.0.0.1", "--dbname=taskhandler", "--username=taskhandler_app"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:8-alpine@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80
+    <<: *hardened
+    user: redis
+    command: ["sh", "/usr/local/bin/start-redis.sh"]
+    secrets: [redis_password]
+    volumes:
+      - ./redis/start-redis.sh:/usr/local/bin/start-redis.sh:ro
+      - ./local/certs/redis.crt:/run/tls/redis.crt:ro
+      - ./local/certs/redis.key:/run/tls/redis.key:ro
+      - ./local/certs/ca.crt:/run/tls/ca.crt:ro
+    tmpfs: [/tmp]
+    networks: [data]
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli --tls --cacert /run/tls/ca.crt --sni redis -h 127.0.0.1 -p 6380 --user taskhandler_app --no-auth-warning ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Remplaçant local d'un fournisseur SMTP : TLS implicite et authentification, comme en
+  # production. Sur un vrai serveur, ce service disparaît et `TASKHANDLER_SMTP_*` désigne le
+  # fournisseur.
+  mailpit:
+    image: axllent/mailpit@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    <<: *hardened
+    environment:
+      MP_MAX_MESSAGES: "500"
+      MP_SMTP_TLS_CERT: /run/tls/mailpit.crt
+      MP_SMTP_TLS_KEY: /run/tls/mailpit.key
+      MP_SMTP_REQUIRE_TLS: "true"
+      MP_SMTP_AUTH_FILE: /run/secrets/mailpit_auth
+    secrets: [mailpit_auth]
+    volumes:
+      - ./local/certs/mailpit.crt:/run/tls/mailpit.crt:ro
+      - ./local/certs/mailpit.key:/run/tls/mailpit.key:ro
+    tmpfs: [/tmp]
+    # Aucun port publié : le réseau `data` reste entièrement interne. Les e-mails se lisent depuis
+    # le conteneur (`docker compose ... exec mailpit wget -qO- http://127.0.0.1:8025/api/v1/messages`).
+    networks: [data]
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Étape séparée : applique les migrations avec le rôle de migration, puis s'arrête. L'API, qui
+  # ne détient que le rôle applicatif, ne démarre qu'après son succès.
+  migrate:
+    build: ../backend
+    image: taskhandler-api:local
+    <<: *hardened
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      TASKHANDLER_MIGRATION_ENVIRONMENT: production
+      # asyncpg lit l'autorité de confiance dans cette variable standard de libpq.
+      PGSSLROOTCERT: /run/certs/ca.crt
+    secrets:
+      - source: migration_database_url
+        target: taskhandler_migration_database_url
+    volumes:
+      - ./local/certs/ca.crt:/run/certs/ca.crt:ro
+    tmpfs: [/tmp]
+    networks: [data]
+    mem_limit: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    image: taskhandler-api:local
+    <<: *hardened
+    environment: *api-environment
+    secrets:
+      - source: app_database_url
+        target: taskhandler_database_url
+      - source: app_redis_url
+        target: taskhandler_redis_url
+      - source: jwt_secret
+        target: taskhandler_jwt_secret
+      - source: smtp_password
+        target: taskhandler_smtp_password
+    volumes:
+      - ./local/certs/ca.crt:/run/certs/ca.crt:ro
+    tmpfs: [/tmp]
+    networks:
+      edge:
+      data:
+    # Quatre hachages argon2id simultanés réservent 256 Mio : la limite laisse de la marge.
+    mem_limit: 512m
+    cpus: 2
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+
+  nginx:
+    image: nginxinc/nginx-unprivileged@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+    <<: *hardened
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/security-headers.conf:/etc/nginx/security-headers.conf:ro
+      - ./local/certs/nginx.crt:/run/tls/nginx.crt:ro
+      - ./local/certs/nginx.key:/run/tls/nginx.key:ro
+    tmpfs: [/tmp]
+    ports:
+      - "127.0.0.1:${TASKHANDLER_HTTPS_PORT:-8443}:8443"
+    networks: [public, edge]
+    mem_limit: 128m
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      # Port de santé limité à la boucle locale du conteneur, jamais publié.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Sauvegarde à la demande (profil `tools`) : `docker compose ... run --rm backup`.
+  backup:
+    build: ./backup
+    image: taskhandler-backup:local
+    <<: *hardened
+    restart: "no"
+    profiles: [tools]
+    environment:
+      BACKUP_RETENTION_DAYS: "14"
+    secrets: [backup_password]
+    volumes:
+      - backups:/backups
+      - ./local/backup/recipient.txt:/run/backup/recipient.txt:ro
+      - ./local/certs/ca.crt:/run/certs/ca.crt:ro
+    tmpfs: [/tmp]
+    networks: [data]
+    mem_limit: 256m
+
+  # Sauvegarde automatique : le même script, à intervalle fixe (une fois par jour par défaut).
+  # Un échec est journalisé sans arrêter la planification.
+  backup-scheduler:
+    image: taskhandler-backup:local
+    <<: *hardened
+    command:
+      - bash
+      - -c
+      - |
+        while true; do
+          /usr/local/bin/backup.sh || echo '{"event":"backup_failed"}' >&2
+          sleep "$${BACKUP_INTERVAL_SECONDS}"
+        done
+    environment:
+      BACKUP_RETENTION_DAYS: "14"
+      BACKUP_INTERVAL_SECONDS: "${TASKHANDLER_BACKUP_INTERVAL_SECONDS:-86400}"
+    secrets: [backup_password]
+    volumes:
+      - backups:/backups
+      - ./local/backup/recipient.txt:/run/backup/recipient.txt:ro
+      - ./local/certs/ca.crt:/run/certs/ca.crt:ro
+    tmpfs: [/tmp]
+    networks: [data]
+    mem_limit: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  # Seul réseau relié à l'extérieur, et seulement nginx y est : c'est l'unique point d'entrée.
+  public:
+  # nginx et l'API seulement ; interne, donc l'API ne peut appeler aucun service extérieur
+  # (OWASP API7). Sous-réseau fixe, pour la liste des proxys de confiance.
+  edge:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${TASKHANDLER_EDGE_SUBNET:-172.30.10.0/24}
+  # Réseau des données, sans accès à Internet : aucun service ne peut appeler l'extérieur.
+  data:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${TASKHANDLER_DATA_SUBNET:-172.30.20.0/24}
+
+volumes:
+  postgres_data:
+  backups:
+
+secrets:
+  postgres_password: { file: ./local/secrets/postgres_password }
+  migrator_password: { file: ./local/secrets/migrator_password }
+  app_password: { file: ./local/secrets/app_password }
+  backup_password: { file: ./local/secrets/backup_password }
+  redis_password: { file: ./local/secrets/redis_password }
+  jwt_secret: { file: ./local/secrets/jwt_secret }
+  smtp_password: { file: ./local/secrets/smtp_password }
+  mailpit_auth: { file: ./local/secrets/mailpit_auth }
+  app_database_url: { file: ./local/secrets/app_database_url }
+  migration_database_url: { file: ./local/secrets/migration_database_url }
+  app_redis_url: { file: ./local/secrets/app_redis_url }
