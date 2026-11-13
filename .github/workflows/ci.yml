@@ -143,12 +143,17 @@ jobs:
           scan docker-archive:/scan/image.tar --quiet
           --output cyclonedx-json=/scan/sbom.cdx.json
       # Échec sur toute vulnérabilité haute ou critique pour laquelle un correctif existe : il
-      # suffit alors de mettre à jour l'image de base ou la dépendance concernée.
+      # suffit alors de mettre à jour l'image de base ou la dépendance concernée. Les seules
+      # exceptions sont dans `.grype.yaml`, versionnées, ciblées et justifiées. (Pas de
+      # `--show-suppressed` : il mêlerait à ces exceptions les failles sans correctif, que
+      # `--only-fixed` met aussi de côté, et brouillerait la lecture du journal.)
       - name: Analyser les vulnérabilités de l'image
         run: >-
           docker run --rm --volume "$RUNNER_TEMP:/scan:ro"
+          --volume "$PWD/.grype.yaml:/config/grype.yaml:ro"
           anchore/grype:v0.121.3@sha256:13113eeceab017260370cf540e1d25442c59665fd07d1b09b66d63bb0c282887
-          sbom:/scan/sbom.cdx.json --only-fixed --fail-on high --output table
+          sbom:/scan/sbom.cdx.json --config /config/grype.yaml
+          --only-fixed --fail-on high --output table
       - name: Conserver le SBOM
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

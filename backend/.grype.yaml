@@ -1,0 +1,19 @@
+# Exceptions de l'analyse de vulnérabilités (job `image` de la CI). Chaque exception est :
+# - ciblée : une seule CVE, un seul paquet, une seule version, pour s'éteindre d'elle-même à la
+#   mise à jour du paquet ;
+# - justifiée : pourquoi la faille ne s'applique pas ici, et comment cela a été vérifié ;
+# - datée : à réexaminer dès la sortie du correctif.
+# Toute autre vulnérabilité haute ou critique corrigeable continue de bloquer la CI.
+
+ignore:
+  # CVE-2026-119170 (CVSS 8.2) — ajoutée le 12/11/2026.
+  # Régression de l'application des algorithmes FIPS par `hashlib`, qui ne touche que Python
+  # 3.14.10 utilisé avec OpenSSL en mode FIPS. Notre image n'est pas en mode FIPS : vérifié par
+  # `_hashlib.get_fips_mode() == 0`, fournisseur OpenSSL par défaut, module `fips.so` absent.
+  # Correctif prévu dans Python 3.14.11, pas encore publié à cette date : passer à 3.14.11
+  # (`.python-version` et images de base du Dockerfile) dès sa sortie, puis retirer cette entrée.
+  - vulnerability: CVE-2026-119170
+    package:
+      name: python
+      version: 3.14.10
+      type: binary

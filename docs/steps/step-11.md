@@ -113,6 +113,16 @@ n'ont jamais le socket Docker), SBOM CycloneDX par Syft (gardé 90 jours), analy
 **échec sur toute vulnérabilité haute ou critique corrigeable**. Restent, sous ce seuil, trois CVE
 de l'interpréteur Python corrigées seulement dans des versions futures.
 
+Les exceptions vivent dans `backend/.grype.yaml`, chacune **ciblée** (une CVE, un paquet, une
+version : elle s'éteint à la mise à jour), **justifiée** et datée. Le fichier est versionné, donc
+relu comme le code.
+
+> **Piège rencontré.** Le lendemain, la CI a échoué sur un commit qui ne touchait que la roadmap :
+> CVE-2026-119170 venait d'être publiée pour Python 3.14.10, « corrigée » dans une 3.14.11 encore
+> inexistante. Elle ne touche que OpenSSL en mode FIPS, absent de l'image (vérifié) : exception
+> ciblée, à retirer au passage à 3.14.11. Une analyse d'image peut donc échouer sans changement de
+> code : c'est voulu, la base de vulnérabilités évolue chaque jour.
+
 ## Étape 9 — Rotation et incidents
 
 `docs/exploitation.md` décrit la rotation de chaque secret ; celles de la clé JWT (ancien jeton
