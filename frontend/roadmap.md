@@ -38,7 +38,7 @@ le jeton de renouvellement hors de portée de JavaScript.
 | Phase | Sujet | État |
 |---|---|---|
 | 0 | Socle Next.js et outillage qualité | Terminée |
-| 1 | Application minimale sûre par défaut | À faire |
+| 1 | Application minimale sûre par défaut | Terminée |
 | 2 | Intégration continue du frontend | À faire |
 | 3 | Adaptation de l'API au navigateur | À faire |
 | 4 | Client API et gestion de session | À faire |
@@ -75,16 +75,16 @@ secret sont bloqués dès la première ligne.
 
 **Objectif :** une coquille d'application sans logique métier, déjà protégée par ses en-têtes.
 
-- [ ] Rédiger `frontend/docs/steps/step-1.md`
-- [ ] Valider au démarrage la configuration publique (adresse de l'API en HTTPS hors développement)
-- [ ] Vérifier qu'aucun secret ne transite par une variable `NEXT_PUBLIC_*`
-- [ ] Générer une CSP stricte à nonce par requête : `default-src 'none'`, `script-src` à nonce et
+- [x] Rédiger `frontend/docs/steps/step-1.md`
+- [x] Valider au démarrage la configuration publique (adresse de l'API en HTTPS hors développement)
+- [x] Vérifier qu'aucun secret ne transite par une variable `NEXT_PUBLIC_*`
+- [x] Générer une CSP stricte à nonce par requête : `default-src 'none'`, `script-src` à nonce et
       `'strict-dynamic'`, `connect-src` limité à l'API, `object-src`, `base-uri` et `frame-ancestors` à `'none'`
-- [ ] Ajouter `Referrer-Policy: no-referrer`, `X-Content-Type-Options`, `Permissions-Policy`,
+- [x] Ajouter `Referrer-Policy: no-referrer`, `X-Content-Type-Options`, `Permissions-Policy`,
       `poweredByHeader: false` et HSTS en production
-- [ ] Ne pas publier les source maps en production
-- [ ] Créer la mise en page commune en français (`lang="fr"`), la page 404 et une page d'erreur générique
-- [ ] Tester les en-têtes et l'absence de détail technique dans les pages d'erreur
+- [x] Ne pas publier les source maps en production
+- [x] Créer la mise en page commune en français (`lang="fr"`), la page 404 et une page d'erreur générique
+- [x] Tester les en-têtes et l'absence de détail technique dans les pages d'erreur
 
 **Terminé lorsque :** un script en ligne sans nonce est bloqué par le navigateur.
 
