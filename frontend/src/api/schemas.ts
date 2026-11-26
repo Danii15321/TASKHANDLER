@@ -15,10 +15,45 @@ export const API_PREFIX = "/api/v1";
 // mémoire une valeur démesurée renvoyée par erreur.
 const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
+// Limites des mots de passe, identiques à l'API (`password_policy.py`).
+export const PASSWORD_MIN_LENGTH = 12;
+export const PASSWORD_MAX_LENGTH = 128;
+// Longueur maximale d'une adresse e-mail (RFC 5321), identique à l'API.
+export const EMAIL_MAX_LENGTH = 320;
+
+// Format exact d'un jeton à usage unique reçu par e-mail : `secrets.token_urlsafe(32)`.
+export const ONE_TIME_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const OneTimeTokenSchema = z.string().regex(ONE_TIME_TOKEN_PATTERN);
+
+// Corps de `POST /auth/register`. La politique complète (mots de passe courants, ressemblance
+// avec l'adresse) reste vérifiée par l'API, seule à faire foi.
+export const RegisterRequestSchema = z.strictObject({
+  email: z.string().min(1).max(EMAIL_MAX_LENGTH),
+  password: z.string().max(PASSWORD_MAX_LENGTH),
+});
+export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
+
+// Réponse uniforme `202` de l'inscription et du mot de passe oublié, adresse connue ou non.
+export const AcceptedResponseSchema = z.strictObject({ status: z.literal("accepted") });
+
+// Corps de `POST /auth/verify-email`.
+export const VerifyEmailRequestSchema = z.strictObject({ token: OneTimeTokenSchema });
+
+// Corps de `POST /auth/password/forgot`.
+export const ForgotPasswordRequestSchema = z.strictObject({
+  email: z.string().min(1).max(EMAIL_MAX_LENGTH),
+});
+
+// Corps de `POST /auth/password/reset`.
+export const ResetPasswordRequestSchema = z.strictObject({
+  token: OneTimeTokenSchema,
+  new_password: z.string().max(PASSWORD_MAX_LENGTH),
+});
+
 // Corps de `POST /auth/login`, aux limites de l'API.
 export const LoginRequestSchema = z.strictObject({
-  email: z.string().min(1).max(320),
-  password: z.string().min(1).max(128),
+  email: z.string().min(1).max(EMAIL_MAX_LENGTH),
+  password: z.string().min(1).max(PASSWORD_MAX_LENGTH),
 });
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 

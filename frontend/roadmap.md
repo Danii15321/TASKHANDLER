@@ -43,7 +43,7 @@ le jeton de renouvellement hors de portée de JavaScript.
 | 2 | Intégration continue du frontend | En relecture |
 | 3 | Adaptation de l'API au navigateur | Terminée |
 | 4 | Client API et gestion de session | Terminée |
-| 5 | Parcours de compte | À faire |
+| 5 | Parcours de compte | Terminée |
 | 6 | Tâches | À faire |
 | 7 | Grille hebdomadaire | À faire |
 | 8 | Compte et RGPD | À faire |
@@ -155,17 +155,17 @@ jeton n'apparaît dans `localStorage`, `sessionStorage` ni `document.cookie`.
 
 **Objectif :** des écrans de compte qui ne révèlent pas quelles adresses sont inscrites.
 
-- [ ] Rédiger `frontend/docs/steps/step-5.md`
-- [ ] Implémenter l'inscription, avec le même message de confirmation quelle que soit l'adresse
-- [ ] Implémenter `/verify-email` et `/reset-password` : lire le jeton dans le fragment, l'effacer
+- [x] Rédiger `frontend/docs/steps/step-5.md`
+- [x] Implémenter l'inscription, avec le même message de confirmation quelle que soit l'adresse
+- [x] Implémenter `/verify-email` et `/reset-password` : lire le jeton dans le fragment, l'effacer
       aussitôt de l'URL, puis l'envoyer dans un corps `POST`
-- [ ] Implémenter la connexion avec le message unique `identifiants invalides`
-- [ ] Implémenter mot de passe oublié et réinitialisation
-- [ ] Implémenter la déconnexion et la déconnexion de tous les appareils
-- [ ] Champs de mot de passe : 12 à 128 caractères, collage autorisé, attributs `autocomplete`,
+- [x] Implémenter la connexion avec le message unique `identifiants invalides`
+- [x] Implémenter mot de passe oublié et réinitialisation
+- [x] Implémenter la déconnexion et la déconnexion de tous les appareils
+- [x] Champs de mot de passe : 12 à 128 caractères, collage autorisé, attributs `autocomplete`,
       aucune règle de composition
-- [ ] Protéger les pages privées côté client, en rappelant que seule l'API fait foi
-- [ ] Tester chaque parcours, dont un jeton expiré ou déjà utilisé
+- [x] Protéger les pages privées côté client, en rappelant que seule l'API fait foi
+- [x] Tester chaque parcours, dont un jeton expiré ou déjà utilisé
 
 **Terminé lorsque :** les écrans et les messages ne permettent pas de distinguer une adresse connue
 d'une adresse inconnue, et aucun jeton à usage unique ne reste dans l'historique du navigateur.

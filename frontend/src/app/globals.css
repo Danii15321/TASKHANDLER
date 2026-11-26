@@ -1,0 +1,99 @@
+/*
+ * Styles de base : lisibilité, contraste et focus visible (WCAG 2.2 AA). Aucune police ni
+ * ressource externe : la CSP n'autorise que le site lui-même.
+ */
+:root {
+  color-scheme: light;
+  --text: #1a1a1a;
+  --muted: #4a4a4a;
+  --background: #ffffff;
+  --accent: #0b57d0;
+  --error: #b3261e;
+  --success: #146c2e;
+  --border: #757575;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+
+body {
+  margin: 0 auto;
+  max-width: 40rem;
+  padding: 1rem;
+}
+
+.site-header nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+form {
+  display: grid;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+label {
+  font-weight: 600;
+}
+
+input {
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+}
+
+input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.25rem;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+  justify-self: start;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Focus toujours visible, au clavier comme à la souris (WCAG 2.4.7). */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.field-error,
+.message.error {
+  margin: 0;
+  color: var(--error);
+}
+
+.message.success {
+  color: var(--success);
+}

@@ -6,7 +6,16 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
 import contract from "@/api/openapi.json";
-import { LoginRequestSchema, ProblemSchema, TokenResponseSchema } from "@/api/schemas";
+import {
+  AcceptedResponseSchema,
+  ForgotPasswordRequestSchema,
+  LoginRequestSchema,
+  ProblemSchema,
+  RegisterRequestSchema,
+  ResetPasswordRequestSchema,
+  TokenResponseSchema,
+  VerifyEmailRequestSchema,
+} from "@/api/schemas";
 
 // Fragment de JSON Schema, tel que l'écrivent Pydantic et zod.
 interface JsonSchema {
@@ -76,6 +85,11 @@ describe("contrat OpenAPI", () => {
   // ensures  : chaque schéma du frontend correspond au composant du même nom dans le contrat.
   test.each([
     ["LoginRequest", LoginRequestSchema, "input"],
+    ["RegisterRequest", RegisterRequestSchema, "input"],
+    ["VerifyEmailRequest", VerifyEmailRequestSchema, "input"],
+    ["ForgotPasswordRequest", ForgotPasswordRequestSchema, "input"],
+    ["ResetPasswordRequest", ResetPasswordRequestSchema, "input"],
+    ["AcceptedResponse", AcceptedResponseSchema, "output"],
     ["TokenResponse", TokenResponseSchema, "output"],
     ["Problem", ProblemSchema, "output"],
   ] as const)("%s correspond au contrat", (name, schema, io) => {

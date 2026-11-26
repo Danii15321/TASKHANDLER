@@ -1,6 +1,6 @@
 // Assemblage du gestionnaire de session pour le navigateur : vrai `fetch`, verrous Web Locks
 // partagés entre onglets, et `BroadcastChannel` pour annoncer connexion et déconnexion.
-import { createHttpClient } from "@/api/http-client";
+import { createHttpClient, type HttpClient } from "@/api/http-client";
 import { loadPublicConfig } from "@/config/public-config";
 import { createLocalLockManager, type LockManagerLike } from "@/session/locks";
 import {
@@ -12,6 +12,24 @@ import {
 
 // Gestionnaire unique de l'onglet : le jeton d'accès n'existe qu'à un seul endroit.
 let instance: SessionManager | undefined;
+// Client HTTP unique de l'onglet, partagé par le gestionnaire et les formulaires publics.
+let httpInstance: HttpClient | undefined;
+
+// requires : exécuté dans un navigateur.
+// assigns  : crée le client au premier appel.
+// ensures  : renvoie toujours le même client, relié à l'API configurée et au `fetch` du
+//            navigateur. Les requêtes sans jeton (inscription, liens reçus par e-mail) passent
+//            par lui ; les requêtes authentifiées passent par le gestionnaire de session.
+export function getBrowserHttpClient(): HttpClient {
+  httpInstance ??= createHttpClient({
+    apiOrigin: loadPublicConfig().apiOrigin,
+    // requires : voir `fetch`.
+    // assigns  : envoie une requête HTTP.
+    // ensures  : délègue au `fetch` du navigateur, appelé sans `this` détourné.
+    fetch: (input, init) => fetch(input, init),
+  });
+  return httpInstance;
+}
 
 // requires : exécuté dans un navigateur.
 // assigns  : rien.
@@ -68,13 +86,7 @@ export function browserChannel(): SessionChannel {
 // ensures  : renvoie toujours le même gestionnaire pour cet onglet.
 export function getBrowserSessionManager(): SessionManager {
   instance ??= createSessionManager({
-    http: createHttpClient({
-      apiOrigin: loadPublicConfig().apiOrigin,
-      // requires : voir `fetch`.
-      // assigns  : envoie une requête HTTP.
-      // ensures  : délègue au `fetch` du navigateur, appelé sans `this` détourné.
-      fetch: (input, init) => fetch(input, init),
-    }),
+    http: getBrowserHttpClient(),
     locks: browserLocks(),
     channel: browserChannel(),
     // requires : `delayMs` est positif.

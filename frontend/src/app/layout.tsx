@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import type { ReactNode } from "react";
 
+import { SiteHeader } from "@/components/site-header";
 import { SessionBootstrap } from "@/session/session-bootstrap";
+
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "TaskHandler",
@@ -27,6 +30,7 @@ export default async function RootLayout({
     <html lang="fr">
       <body>
         <SessionBootstrap />
+        <SiteHeader />
         {children}
       </body>
     </html>
