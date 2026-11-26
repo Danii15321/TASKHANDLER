@@ -1,10 +1,13 @@
 # CLAUDE.md
 
-TaskHandler est une API FastAPI + PostgreSQL de planification de tâches dans une grille hebdomadaire.
+TaskHandler planifie des tâches dans une grille hebdomadaire : une API FastAPI + PostgreSQL
+(`backend/`, terminée) et un frontend Next.js géré avec pnpm (`frontend/`, en cours).
 Elle stocke des données personnelles : **la sécurité prime sur la rapidité de livraison**.
 
-Lire [README.md](README.md) pour le projet et [docs/roadmap.md](docs/roadmap.md) pour l'avancement.
-Avant de coder, lire le fichier `docs/steps/step-x.md` de la phase en cours.
+Lire [README.md](README.md), puis la roadmap concernée : [backend](docs/roadmap.md) ou
+[frontend](frontend/roadmap.md). Avant de coder, lire le `step-x.md` de la phase en cours
+(`docs/steps/` ou `frontend/docs/steps/`). Le frontend a ses règles propres dans
+[frontend/CLAUDE.md](frontend/CLAUDE.md), qui complètent celles-ci sans les remplacer.
 
 ## Règles de travail (non négociables)
 
@@ -17,8 +20,8 @@ Avant de coder, lire le fichier `docs/steps/step-x.md` de la phase en cours.
 - Zéro compromis sur la qualité : pas de `TODO` de sécurité, de contournement ou de test désactivé.
 - Face à un choix de conception ayant un impact sur la sécurité, présenter le compromis et demander.
 - Ajouter une commande au README seulement après l'avoir réellement exécutée.
-- Tailles maximales : `README.md`, `CLAUDE.md` et `docs/steps/step-x.md` 200 lignes,
-  `docs/roadmap.md` 500 lignes.
+- Tailles maximales : `README.md`, chaque `CLAUDE.md` et chaque `step-x.md` 200 lignes, chaque
+  roadmap 500 lignes.
 - Chaque `step-x.md` est pédagogique : un humain doit pouvoir écrire le code en le suivant. Il
   mentionne explicitement les bonnes pratiques et les normes de sécurité de la phase.
 - Rédiger le code, les commentaires et la documentation en français ; les identifiants en anglais.
@@ -43,6 +46,8 @@ async def hash_password(plain: str) -> str:
 - `ensures` : postconditions, valeur renvoyée et exceptions possibles.
 - Le code est abondamment commenté : expliquer le **pourquoi**, surtout pour les choix de sécurité.
 - Typage complet (`mypy --strict`). `# type: ignore` et `# noqa` exigent une justification en ligne.
+- Frontend : mêmes étiquettes en commentaires `//`, TypeScript `strict` (détails dans
+  [frontend/CLAUDE.md](frontend/CLAUDE.md)).
 
 ## Modèle de menace
 
@@ -170,7 +175,7 @@ async def hash_password(plain: str) -> str:
 
 - Pas de nouvelle dépendance sans justification et validation. Vérifier le nom exact (typosquatting),
   la maintenance et les vulnérabilités connues.
-- Versions verrouillées dans `uv.lock`. `pip-audit` doit passer avant de terminer un travail.
+- Versions verrouillées dans `uv.lock` (pip-audit) et `frontend/pnpm-lock.yaml` (`pnpm audit`).
 - Pas de `eval`, `exec`, `pickle` sur des données non fiables, ni de `subprocess` avec `shell=True`.
 
 ## Tests de sécurité obligatoires
@@ -186,7 +191,7 @@ Toute correction d'un défaut de sécurité commence par un test qui le reprodui
 
 ## Avant de déclarer un travail terminé
 
-1. Les contrôles disponibles à cette phase passent : ruff, mypy, pytest, pip-audit, gitleaks.
+1. Les contrôles de la phase passent : ruff, mypy, pytest, pip-audit, gitleaks (frontend : les siens).
 2. Chaque nouvelle fonction porte `requires`, `assigns` et `ensures`.
 3. Chaque nouvelle route est authentifiée, ou explicitement publique, avec ses tests de sécurité.
 4. Chaque modification de schéma passe par une migration, appliquée puis annulée.

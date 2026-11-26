@@ -28,6 +28,28 @@ repos:
         files: ^backend/
         pass_filenames: false
 
+      # Frontend : les outils sont lancés via pnpm, leurs versions viennent donc de
+      # `frontend/pnpm-lock.yaml`. Le réglage `verifyDepsBeforeRun: error` refuse de continuer
+      # si les dépendances installées ne correspondent plus à ce fichier.
+      - id: eslint
+        name: eslint (qualité, accessibilité et règles de sécurité)
+        entry: pnpm --dir frontend run lint
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+      - id: prettier
+        name: prettier (formatage)
+        entry: pnpm --dir frontend run format:check
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+      - id: tsc
+        name: tsc (types, mode strict)
+        entry: pnpm --dir frontend run typecheck
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+
   # Détection de secrets sur tous les fichiers indexés, pas seulement ceux de `backend/`.
   # La révision est une empreinte de commit : contrairement à une étiquette, elle ne
   # peut pas être déplacée vers un autre contenu après coup.

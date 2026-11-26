@@ -1,0 +1,45 @@
+{
+  // TypeScript ne produit aucun fichier : Next.js compile le code. `tsc` sert uniquement de
+  // vérificateur de types, aussi strict que `mypy --strict` côté backend.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "es2024"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "incremental": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowJs": false,
+
+    // Mode strict complet : `null` et `undefined` explicites, `any` implicite interdit,
+    // variables de `catch` typées `unknown`.
+    "strict": true,
+    // `tableau[i]` et `objet[clé]` sont typés `T | undefined` : oblige à traiter l'absence,
+    // source classique d'erreurs à l'exécution.
+    "noUncheckedIndexedAccess": true,
+    // Un champ optionnel absent et un champ valant `undefined` ne sont pas la même chose,
+    // comme dans les schémas `extra="forbid"` de l'API.
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "forceConsistentCasingInFileNames": true,
+    // Les types des dépendances sont aussi vérifiés : rien n'est ignoré par confort.
+    "skipLibCheck": false,
+
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

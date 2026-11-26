@@ -25,6 +25,13 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Frontend : dépendances recréées à l'identique depuis `pnpm-lock.yaml`, et fichiers générés
+# par Next.js et TypeScript.
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
 # Rapports de couverture de tests.
 .coverage
 .coverage.*

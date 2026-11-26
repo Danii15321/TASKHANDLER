@@ -2,11 +2,11 @@
 
 TaskHandler est une application web qui permet de **planifier ses tâches** dans une grille hebdomadaire.
 
-Ce dépôt couvre pour l'instant uniquement le **backend** : une API REST construite avec FastAPI et
-PostgreSQL. Le frontend sera traité plus tard.
+Le dépôt contient le **backend**, une API REST FastAPI + PostgreSQL, et le **frontend**, une
+application Next.js qui consomme cette API.
 
-> **État du projet :** API complète, durcie et conteneurisée, avec sauvegardes chiffrées et
-> restauration testée. L'avancement réel se lit dans la [roadmap](docs/roadmap.md).
+> **État du projet :** API complète, durcie, conteneurisée et restaurable
+> ([roadmap backend](docs/roadmap.md)). Frontend en conception ([roadmap frontend](frontend/roadmap.md)).
 
 ---
 
@@ -28,7 +28,7 @@ PostgreSQL. Le frontend sera traité plus tard.
 - Grille visée : **une ligne par jour, une colonne par heure** ; elle n'affiche que le titre, la
   description vient au clic. L'API sert donc une grille légère, puis le détail d'une tâche.
 
-Hors périmètre de la première version : frontend, tâches récurrentes, partage, notifications.
+Hors périmètre de la première version : tâches récurrentes, partage, notifications.
 
 ---
 
@@ -50,8 +50,8 @@ Hors périmètre de la première version : frontend, tâches récurrentes, parta
 | Sécurité outillée | pip-audit, gitleaks, règles Bandit de ruff | Dépendances, secrets, code |
 | Dépendances | uv + fichier de verrouillage | Installations reproductibles |
 | Déploiement | Docker non root, nginx, TLS partout, sauvegardes `age` | Reproductible et restaurable |
-
-Chaque outil est introduit **par la phase qui en a besoin**, jamais à l'avance.
+| Frontend | Next.js (App Router) + React + TypeScript `strict` | Typage de bout en bout, CSP à nonce |
+| Dépendances frontend | pnpm + `pnpm-lock.yaml` (Poetry ne gère que Python) | Scripts d'installation bloqués |
 
 ---
 
@@ -70,6 +70,7 @@ Le code est organisé par **domaine métier**, et chaque domaine est découpé e
 │   ├── exploitation.md      # Sauvegardes, restauration, rotation des secrets
 │   └── incident-response.md # Plan de réponse à incident
 ├── deploy/                  # Pile de production : compose, nginx, PostgreSQL, sauvegardes
+├── frontend/                # Next.js : roadmap.md, CLAUDE.md, docs/steps/, puis le code
 └── backend/
     ├── app/
     │   ├── main.py          # Assemblage de l'application
@@ -153,17 +154,16 @@ détaillées sont dans [CLAUDE.md](CLAUDE.md).
 
 Le projet avance **phase par phase**, sans scaffold global.
 
-1. La [roadmap](docs/roadmap.md) liste les phases et leurs tâches à cocher.
-2. Chaque phase dispose d'un guide `docs/steps/step-x.md`, assez pédagogique pour qu'un humain
-   puisse écrire le code lui-même.
+1. Les roadmaps [backend](docs/roadmap.md) et [frontend](frontend/roadmap.md) listent les phases.
+2. Chaque phase dispose d'un guide `step-x.md` (`docs/steps/` ou `frontend/docs/steps/`), assez
+   pédagogique pour qu'un humain puisse écrire le code lui-même.
 3. Le code, les dépendances et l'environnement n'apparaissent que lorsqu'une phase les requiert.
 4. Aucun commit sans autorisation explicite ; `main` n'évolue que par pull request depuis `daniel_dev`.
 
 Toute fonction est abondamment commentée et précédée des étiquettes `requires`, `assigns` et
 `ensures`, décrites en français (format détaillé dans [CLAUDE.md](CLAUDE.md)).
 
-Tailles maximales : 200 lignes pour `README.md`, `CLAUDE.md` et chaque `step-x.md`, 500 lignes pour
-`docs/roadmap.md`.
+Tailles maximales : 200 lignes pour `README.md`, chaque `CLAUDE.md` et `step-x.md`, 500 par roadmap.
 
 ---
 

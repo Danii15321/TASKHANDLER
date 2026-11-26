@@ -284,7 +284,7 @@ données.
 
 Sujets à réévaluer une fois le backend stabilisé :
 
-- [ ] Frontend, avec jeton de renouvellement en cookie `HttpOnly`, `Secure`, `SameSite` et protection CSRF
+- [ ] Frontend : suivi dans [frontend/roadmap.md](../frontend/roadmap.md) (cookie `HttpOnly` et CSRF en phase 3)
 - [ ] Authentification à deux facteurs (TOTP, WebAuthn)
 - [ ] Tâches récurrentes
 - [ ] Notifications et rappels

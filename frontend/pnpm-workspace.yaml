@@ -1,0 +1,53 @@
+# Configuration de pnpm pour le frontend. Depuis pnpm 11, ces réglages vivent ici et non plus
+# dans `.npmrc`, qui ne sert qu'à l'authentification et au registre.
+#
+# Chaque réglage ci-dessous réduit la surface d'attaque de la chaîne d'approvisionnement npm :
+# un paquet compromis s'exécute dès son installation, bien avant toute relecture du code.
+
+# Une version n'est installée que 7 jours (10 080 minutes) après sa publication. La plupart des
+# versions malveillantes sont détectées et retirées du registre bien avant ce délai. Le mode
+# strict fait échouer l'installation plutôt que de se rabattre sur une version trop récente.
+# Un correctif de sécurité urgent s'ajoute à `minimumReleaseAgeExclude`, avec sa justification.
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+
+# Refuse une version dont le niveau de confiance baisse (par exemple, un paquet jusque-là publié
+# avec une provenance vérifiée qui arrive soudain sans) : signe classique d'un compte compromis.
+trustPolicy: no-downgrade
+
+# Seules les dépendances directes peuvent venir d'une source « exotique » (dépôt Git, archive
+# en URL) ; les dépendances transitives viennent obligatoirement du registre.
+blockExoticSubdeps: true
+
+# Les scripts d'installation (`postinstall`…) sont interdits par défaut, et un script non revu
+# fait échouer l'installation. Chaque autorisation est ajoutée ici, nommée et justifiée.
+strictDepBuilds: true
+allowBuilds: {}
+
+# Une incompatibilité de version de Node.js ou d'une dépendance paire est une erreur, pas un
+# avertissement qu'on finit par ignorer. Les paires sont déclarées explicitement.
+engineStrict: true
+strictPeerDependencies: true
+autoInstallPeers: false
+
+# La version de pnpm épinglée dans `package.json` est imposée : pnpm échoue au lieu de
+# télécharger silencieusement une autre version de lui-même.
+pmOnFail: error
+
+# Avant `pnpm run` ou `pnpm exec`, des dépendances désynchronisées du fichier de verrouillage sont
+# une erreur : pas d'installation implicite pendant un contrôle.
+verifyDepsBeforeRun: error
+
+# Versions exactes dans `package.json` : une mise à jour est toujours un choix explicite et relu.
+saveExact: true
+
+# ESLint 9 est en fin de vie depuis août 2026 : on utilise ESLint 10. `eslint-config-next`
+# l'accepte (`eslint >=9`) et adapte lui-même les plugins React et import à la nouvelle API
+# (`fixupPluginRules`), mais trois plugins n'ont pas encore élargi leur plage déclarée.
+# L'exception est limitée à ces trois paquets et à la seule paire `eslint`, en version 10.
+# À retirer dès que leurs plages de dépendances paires incluent ESLint 10.
+peerDependencyRules:
+  allowedVersions:
+    "eslint-plugin-react>eslint": "10"
+    "eslint-plugin-import>eslint": "10"
+    "eslint-plugin-jsx-a11y>eslint": "10"
