@@ -162,3 +162,83 @@ jobs:
           path: ${{ runner.temp }}/sbom.cdx.json
           retention-days: 90
           if-no-files-found: error
+
+  # ---------------------------------------------------------------------------------------------
+  # Frontend : mêmes principes que le backend (actions épinglées, droits minimaux, aucun cache).
+  # ---------------------------------------------------------------------------------------------
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      # Aucune statistique d'usage envoyée à Vercel depuis la CI.
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Version exacte lue dans `.nvmrc`, comme en local. Aucun cache : comme pour uv, une
+      # branche ne doit pas pouvoir empoisonner les dépendances utilisées par la suivante.
+      - name: Installer Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.nvmrc
+          package-manager-cache: false
+      # La version vient du champ `packageManager` de `package.json` : une seule source de vérité.
+      # Aucune action tierce : npm vérifie l'empreinte publiée par le registre.
+      - name: Installer pnpm
+        run: npm install --global "$(node --print 'require("./package.json").packageManager')"
+      # `--frozen-lockfile` refuse toute divergence avec `pnpm-lock.yaml` ; les règles de
+      # `pnpm-workspace.yaml` (délai de 7 jours, scripts interdits, confiance) s'appliquent.
+      - name: Installer les dépendances
+        run: pnpm install --frozen-lockfile
+      - name: Analyse statique, accessibilité et règles de sécurité
+        run: pnpm run lint
+      - name: Formatage
+        run: pnpm run format:check
+      - name: Types (mode strict)
+        run: pnpm run typecheck
+      - name: Tests et seuil de couverture
+        run: pnpm run test:coverage
+      # Adresse fictive (domaine `.invalid`, réservé) : le build vérifie la configuration, mais
+      # l'application construite n'est publiée nulle part.
+      - name: Build de production
+        run: pnpm run build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: https://api.ci.invalid
+      # Une source map publiée révélerait tout le code source au navigateur.
+      - name: Vérifier qu'aucune source map n'est publiée
+        run: test -z "$(find .next/static -name '*.map' -print -quit)"
+
+  frontend-audit:
+    name: frontend-audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Installer Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.nvmrc
+          package-manager-cache: false
+      - name: Installer pnpm
+        run: npm install --global "$(node --print 'require("./package.json").packageManager')"
+      # L'audit lit les versions exactes du fichier de verrouillage, outils de développement
+      # compris : la moindre vulnérabilité connue, quel que soit son niveau, bloque le changement.
+      - name: Vulnérabilités connues des dépendances
+        run: pnpm audit --audit-level low

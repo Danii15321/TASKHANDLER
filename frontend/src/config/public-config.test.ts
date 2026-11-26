@@ -34,6 +34,15 @@ describe("parsePublicConfig", () => {
 
   // requires : rien.
   // assigns  : rien.
+  // ensures  : même en développement, seuls HTTP et HTTPS sont acceptés.
+  test("refuse tout autre schéma en développement", () => {
+    expect(() => parsePublicConfig({ apiBaseUrl: "ftp://127.0.0.1:8000" }, DEVELOPMENT)).toThrow(
+      /http ou https/,
+    );
+  });
+
+  // requires : rien.
+  // assigns  : rien.
   // ensures  : chaque valeur dangereuse ou incohérente empêche le démarrage.
   test.each([
     ["absente", undefined],

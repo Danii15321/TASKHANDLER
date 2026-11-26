@@ -39,7 +39,7 @@ le jeton de renouvellement hors de portée de JavaScript.
 |---|---|---|
 | 0 | Socle Next.js et outillage qualité | Terminée |
 | 1 | Application minimale sûre par défaut | Terminée |
-| 2 | Intégration continue du frontend | À faire |
+| 2 | Intégration continue du frontend | En relecture |
 | 3 | Adaptation de l'API au navigateur | À faire |
 | 4 | Client API et gestion de session | À faire |
 | 5 | Parcours de compte | À faire |
@@ -94,12 +94,12 @@ secret sont bloqués dès la première ligne.
 
 **Objectif :** aucun changement du frontend n'est accepté sans passer les contrôles.
 
-- [ ] Rédiger `frontend/docs/steps/step-2.md`
-- [ ] Ajouter au pipeline une tâche frontend : installation `--frozen-lockfile`, lint, types, tests, build
-- [ ] Exécuter `pnpm audit` et bloquer sur une vulnérabilité connue
-- [ ] Épingler les actions par empreinte et restreindre les permissions, comme pour le backend
-- [ ] Mettre en cache le magasin pnpm sans jamais réutiliser `node_modules` d'une autre exécution
-- [ ] Mesurer la couverture de tests et fixer un seuil
+- [x] Rédiger `frontend/docs/steps/step-2.md`
+- [x] Ajouter au pipeline une tâche frontend : installation `--frozen-lockfile`, lint, types, tests, build
+- [x] Exécuter `pnpm audit` et bloquer sur une vulnérabilité connue
+- [x] Épingler les actions par empreinte et restreindre les permissions, comme pour le backend
+- [x] Ne partager aucun cache entre exécutions, comme pour le backend (empoisonnement de cache)
+- [x] Mesurer la couverture de tests et fixer un seuil
 
 **Terminé lorsque :** une dépendance vulnérable ou un test frontend en échec bloque la pull request.
 
