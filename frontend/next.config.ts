@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Les source maps du navigateur révéleraient le code source complet : jamais publiées.
   productionBrowserSourceMaps: false,
+  // `next dev` écrirait sinon un `AGENTS.md` dès qu'il détecte un agent IA : aucun fichier
+  // généré par l'outillage n'entre dans le dépôt. La consigne utile (lire la documentation
+  // fournie dans `node_modules/next/dist/docs/`) figure dans `frontend/CLAUDE.md`.
+  agentRules: false,
 
   // requires : rien.
   // assigns  : rien.

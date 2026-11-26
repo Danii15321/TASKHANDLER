@@ -3,6 +3,10 @@
 Une route ajoutée sans protection, ou hors du préfixe versionné, fait échouer ces tests.
 """
 
+import json
+import os
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from fastapi.testclient import TestClient
@@ -12,6 +16,13 @@ from app.main import create_app
 from app.modules.auth.browser_session import require_csrf_for_login, require_csrf_for_refresh
 from app.modules.auth.dependencies import enforce_user_rate_limit, get_current_user
 from tests.conftest import unreachable_database_url
+
+# Copie du contrat lue par le frontend : ses schémas zod sont vérifiés contre ce fichier.
+FRONTEND_CONTRACT = (
+    Path(__file__).resolve().parents[2] / "frontend" / "src" / "api" / "openapi.json"
+)
+# Régénère la copie au lieu de la comparer : `UPDATE_API_CONTRACT=1 uv run pytest -k contract`.
+UPDATE_CONTRACT = os.environ.get("UPDATE_API_CONTRACT") == "1"
 
 # Routes publiques, exactement celles listées dans le README. Toute autre exige un jeton.
 PUBLIC_ROUTES = {
@@ -137,3 +148,18 @@ def test_refresh_token_never_travels_in_a_body() -> None:
 
     assert "refresh_token" not in str(schema["components"]["schemas"])
     assert "requestBody" not in schema["paths"]["/api/v1/auth/refresh"]["post"]
+
+
+# requires : `app` est assemblée ; le dépôt contient `frontend/`.
+# assigns  : réécrit `frontend/src/api/openapi.json` si `UPDATE_API_CONTRACT=1`.
+# ensures  : la copie du contrat utilisée par le frontend est exactement celle de l'API. Toute
+#            modification d'une route ou d'un schéma oblige à la régénérer, puis à faire passer
+#            les tests de contrat du frontend : un écart ne peut pas passer inaperçu.
+def test_frontend_contract_is_current(app: FastAPI) -> None:
+    expected = json.dumps(app.openapi(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+    if UPDATE_CONTRACT:
+        FRONTEND_CONTRACT.write_text(expected, encoding="utf-8")
+    assert FRONTEND_CONTRACT.read_text(encoding="utf-8") == expected, (
+        "contrat du frontend périmé : UPDATE_API_CONTRACT=1 uv run pytest -k contract"
+    )

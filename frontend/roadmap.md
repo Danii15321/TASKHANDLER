@@ -11,6 +11,7 @@ démarrage de la phase, pas avant. Les règles propres au frontend sont dans
 |---|---|---|
 | Framework | Next.js (App Router) + React + TypeScript `strict` | Typage de bout en bout, routage par fichiers |
 | Dépendances | pnpm, version épinglée, `pnpm-lock.yaml` versionné | Poetry est exclu : il ne gère que des paquets Python |
+| Contrat d'API | Schémas zod, vérifiés contre `openapi.json` exporté par le backend | Types déduits, réponses validées à l'exécution |
 | Appels à l'API | Le navigateur appelle directement l'API `/api/v1` | Le serveur Next.js ne voit jamais un jeton ni une donnée utilisateur |
 | Jeton d'accès | En mémoire JavaScript uniquement | Jamais dans `localStorage`, `sessionStorage`, IndexedDB, un cookie lisible ou une URL |
 | Jeton de renouvellement | Cookie `HttpOnly`, `Secure`, `SameSite=Strict`, posé par l'API | Exige une adaptation du backend (phase 3) et une protection CSRF |
@@ -41,7 +42,7 @@ le jeton de renouvellement hors de portée de JavaScript.
 | 1 | Application minimale sûre par défaut | Terminée |
 | 2 | Intégration continue du frontend | En relecture |
 | 3 | Adaptation de l'API au navigateur | Terminée |
-| 4 | Client API et gestion de session | À faire |
+| 4 | Client API et gestion de session | Terminée |
 | 5 | Parcours de compte | À faire |
 | 6 | Tâches | À faire |
 | 7 | Grille hebdomadaire | À faire |
@@ -132,18 +133,18 @@ aucune réponse de l'API ne contient plus le jeton de renouvellement.
 **Objectif :** un unique point d'accès à l'API, typé, qui gère la session sans jamais stocker de
 jeton de façon persistante.
 
-- [ ] Rédiger `frontend/docs/steps/step-4.md`
-- [ ] Générer les types depuis le contrat OpenAPI de l'API (outil à justifier)
-- [ ] Créer le client HTTP unique : en-tête `Authorization`, délai d'expiration, `credentials`
+- [x] Rédiger `frontend/docs/steps/step-4.md`
+- [x] Décrire l'API en schémas zod, vérifiés contre le contrat OpenAPI exporté par le backend
+- [x] Créer le client HTTP unique : en-tête `Authorization`, délai d'expiration, `credentials`
       réservé aux routes d'authentification
-- [ ] Valider à l'exécution les réponses de l'API, traitées comme non fiables
-- [ ] Traduire les erreurs `application/problem+json` en messages génériques ; gérer `401`, `404`,
+- [x] Valider à l'exécution les réponses de l'API, traitées comme non fiables
+- [x] Traduire les erreurs `application/problem+json` en messages génériques ; gérer `401`, `404`,
       `409` et `429` avec `Retry-After`
-- [ ] Conserver le jeton d'accès en mémoire, et le renouveler avant expiration grâce à `expires_in`
-- [ ] Restaurer la session au chargement de la page par un renouvellement
-- [ ] Coordonner le renouvellement entre onglets (Web Locks) pour ne pas déclencher la détection
+- [x] Conserver le jeton d'accès en mémoire, et le renouveler avant expiration grâce à `expires_in`
+- [x] Restaurer la session au chargement de la page par un renouvellement
+- [x] Coordonner le renouvellement entre onglets (Web Locks) pour ne pas déclencher la détection
       de réutilisation, et diffuser la déconnexion (BroadcastChannel)
-- [ ] Tester : aucun jeton dans le stockage du navigateur, renouvellements concurrents, expiration
+- [x] Tester : aucun jeton dans le stockage du navigateur, renouvellements concurrents, expiration
 
 **Terminé lorsque :** deux onglets ouverts pendant plus de 15 minutes gardent leur session, et aucun
 jeton n'apparaît dans `localStorage`, `sessionStorage` ni `document.cookie`.

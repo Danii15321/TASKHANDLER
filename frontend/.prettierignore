@@ -6,3 +6,5 @@ pnpm-lock.yaml
 
 # La documentation est rédigée à la main (tableaux, retours à la ligne à 100 colonnes).
 *.md
+# Contrat exporté par le backend (`UPDATE_API_CONTRACT=1`), comparé octet par octet : jamais retouché.
+src/api/openapi.json

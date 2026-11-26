@@ -9,6 +9,8 @@ Lire [roadmap.md](roadmap.md) pour l'avancement, puis `docs/steps/step-x.md` de 
 
 - Next.js (App Router), React, TypeScript `strict` avec `noUncheckedIndexedAccess`.
 - Dépendances gérées par **pnpm** uniquement : jamais `npm install`, `yarn` ni Poetry.
+- Next.js évolue vite : avant d'utiliser une API du framework, lire sa documentation fournie avec
+  la version installée, dans `node_modules/next/dist/docs/`.
 - Le navigateur appelle directement l'API `/api/v1`. Le serveur Next.js ne sert que l'application :
   il ne reçoit, ne relaie ni ne stocke aucun jeton ni aucune donnée utilisateur.
 - Aucune Server Action, aucun Route Handler qui lit ou modifie une donnée utilisateur.
@@ -69,7 +71,8 @@ export function TaskTitle({ task }: { task: PlanningEntry }): React.JSX.Element 
 ## Données et validation
 
 - Les réponses de l'API sont **non fiables** (OWASP API10) : validées à l'exécution avant usage.
-- Types générés depuis le contrat OpenAPI : jamais de type d'API écrit à la main en double.
+- Schémas zod (`src/api/schemas.ts`), source unique des types (`z.infer`), vérifiés contre
+  `src/api/openapi.json`, exporté par le backend : jamais de type d'API écrit en double.
 - Les formulaires reprennent les limites de l'API (longueurs, intervalles, 31 jours) pour guider
   l'utilisateur ; l'API reste la seule validation qui fait foi.
 - La grille n'affiche jamais la description d'une tâche : elle est chargée au clic.

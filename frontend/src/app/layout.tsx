@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import type { ReactNode } from "react";
 
+import { SessionBootstrap } from "@/session/session-bootstrap";
+
 export const metadata: Metadata = {
   title: "TaskHandler",
   description: "Planification de tâches dans une grille hebdomadaire.",
@@ -23,7 +25,10 @@ export default async function RootLayout({
 
   return (
     <html lang="fr">
-      <body>{children}</body>
+      <body>
+        <SessionBootstrap />
+        {children}
+      </body>
     </html>
   );
 }

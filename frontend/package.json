@@ -9,11 +9,11 @@
     "pnpm": "12.22.0"
   },
   "scripts": {
-    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev",
-    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "dev": "rm -rf .next/types && NEXT_TELEMETRY_DISABLED=1 next dev",
+    "build": "rm -rf .next/dev && NEXT_TELEMETRY_DISABLED=1 next build",
     "start": "NEXT_TELEMETRY_DISABLED=1 next start",
     "lint": "eslint --max-warnings=0 .",
-    "typecheck": "NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_API_BASE_URL=https://api.typegen.invalid next typegen && tsc --noEmit",
+    "typecheck": "rm -rf .next/dev && NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_API_BASE_URL=https://api.typegen.invalid next typegen && tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
@@ -22,7 +22,8 @@
   "dependencies": {
     "next": "16.4.6",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
