@@ -136,8 +136,8 @@ Les erreurs suivent le format `application/problem+json` (RFC 9457).
 La sécurité est une exigence de conception, pas une étape finale. Principes retenus :
 
 - **Mots de passe** hachés avec argon2id, jamais journalisés ni renvoyés
-- **Sessions** : jeton d'accès de 15 minutes, jeton de renouvellement opaque, haché en base, à
-  rotation obligatoire et avec détection de réutilisation
+- **Sessions** : jeton d'accès de 15 minutes ; jeton de renouvellement opaque, haché en base, en
+  cookie `HttpOnly` protégé du CSRF, à rotation obligatoire et avec détection de réutilisation
 - **Isolation stricte** : chaque requête est filtrée par propriétaire, et la ressource d'un autre
   utilisateur répond `404`
 - **Validation** stricte des entrées et réponses filtrées par un schéma explicite

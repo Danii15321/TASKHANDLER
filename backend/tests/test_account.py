@@ -13,8 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.core.rate_limit import RateLimiter, create_redis_client, get_rate_limiter
 from tests.conftest import (
-    LOGIN_URL,
-    REFRESH_URL,
     TEST_JWT_SECRET,
     TEST_PASSPHRASE,
     LogReader,
@@ -22,6 +20,8 @@ from tests.conftest import (
     bearer,
     create_account,
     login_tokens,
+    post_login,
+    post_refresh,
     unreachable_database_url,
     unreachable_redis_url,
 )
@@ -51,7 +51,7 @@ async def alice(isolated_client: OutboxClient) -> dict[str, str]:
 # assigns  : envoie une connexion.
 # ensures  : renvoie son code HTTP.
 async def login_status(client: OutboxClient, password: str) -> int:
-    response = await client.post(LOGIN_URL, json={"email": EMAIL, "password": password})
+    response = await post_login(client, EMAIL, password)
     return response.status_code
 
 
@@ -89,9 +89,7 @@ async def test_change_password(
     for tokens in (alice, other_device):
         me = await isolated_client.get(ME_URL, headers=bearer(tokens["access_token"]))
         assert me.status_code == HTTPStatus.UNAUTHORIZED
-        refreshed = await isolated_client.post(
-            REFRESH_URL, json={"refresh_token": tokens["refresh_token"]}
-        )
+        refreshed = await post_refresh(isolated_client, tokens["refresh_token"])
         assert refreshed.status_code == HTTPStatus.UNAUTHORIZED
     events = [event for event in read_logs() if event["message"] == "password_changed"]
     assert len(events) == 1

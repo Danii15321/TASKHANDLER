@@ -22,6 +22,7 @@ from app.core.passwords import PasswordHasherService
 from app.core.rate_limit import RateLimiter, create_redis_client
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.db.session import create_database_engine, create_session_factory
+from app.modules.auth.browser_session import CSRF_HEADER_NAME
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.router import session_router
 from app.modules.health.router import router as health_router
@@ -91,11 +92,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             CORSMiddleware,
             allow_origins=resolved_settings.cors_origins,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-            allow_headers=["Authorization", "Content-Type"],
+            # `X-CSRF-Protection` : en-tête anti-CSRF des routes qui posent ou lisent le cookie.
+            allow_headers=["Authorization", "Content-Type", CSRF_HEADER_NAME],
             expose_headers=["X-Request-ID", "Retry-After"],
-            # Les jetons voyagent dans l'en-tête `Authorization`, jamais en cookie : aucun besoin
-            # d'envoyer des identifiants implicites d'un site à l'autre.
-            allow_credentials=False,
+            # Le jeton de renouvellement voyage dans un cookie `HttpOnly` : le navigateur ne
+            # l'envoie et ne l'accepte d'une autre origine que si CORS l'autorise. Ce droit ne
+            # vaut que pour les origines explicites ci-dessus, jamais pour `*`.
+            allow_credentials=True,
             max_age=600,
         )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(resolved_settings.allowed_hosts))

@@ -23,13 +23,14 @@ from app.modules.auth.dependencies import CurrentUserDependency
 from tests.conftest import (
     LOGOUT_ALL_URL,
     LOGOUT_URL,
-    REFRESH_URL,
     TEST_JWT_SECRET,
     LogReader,
     OutboxClient,
     bearer,
     create_account,
     login_tokens,
+    post_refresh,
+    tokens_of,
 )
 
 pytestmark = pytest.mark.anyio
@@ -64,7 +65,7 @@ async def protected_status(client: httpx2.AsyncClient, access_token: str) -> int
 # assigns  : envoie une demande de renouvellement.
 # ensures  : renvoie la réponse HTTP brute.
 async def refresh(client: httpx2.AsyncClient, refresh_token: str) -> httpx2.Response:
-    return await client.post(REFRESH_URL, json={"refresh_token": refresh_token})
+    return await post_refresh(client, refresh_token)
 
 
 # requires : rien.
@@ -175,7 +176,7 @@ async def test_refresh_rotates_tokens(
 
     assert response.status_code == HTTPStatus.OK
     assert response.headers["cache-control"] == "no-store"
-    second = response.json()
+    second = tokens_of(response)
     assert second["refresh_token"] != first["refresh_token"]
     assert claims_of(second["access_token"])["sid"] == claims_of(first["access_token"])["sid"]
     assert await protected_status(isolated_client, second["access_token"]) == HTTPStatus.OK
@@ -203,7 +204,7 @@ async def test_reused_refresh_token_revokes_whole_session(
 ) -> None:
     await create_account(isolated_client)
     stolen = await login_tokens(isolated_client)
-    legitimate = (await refresh(isolated_client, stolen["refresh_token"])).json()
+    legitimate = tokens_of(await refresh(isolated_client, stolen["refresh_token"]))
 
     reuse = await refresh(isolated_client, stolen["refresh_token"])
 
@@ -254,29 +255,6 @@ async def test_expired_refresh_token_is_refused(
         .all()
     )
     assert reasons == [None]
-
-
-# requires : `payload` est un corps de renouvellement invalide.
-# assigns  : rien.
-# ensures  : un jeton mal formé est refusé en 422 avant toute requête en base, un jeton bien formé
-#            mais inconnu en 401.
-@pytest.mark.parametrize(
-    ("payload", "status"),
-    [
-        ({"refresh_token": secrets.token_urlsafe(32)}, HTTPStatus.UNAUTHORIZED),
-        ({"refresh_token": "trop-court"}, HTTPStatus.UNPROCESSABLE_ENTITY),
-        ({"refresh_token": "!" * 43}, HTTPStatus.UNPROCESSABLE_ENTITY),
-        (
-            {"refresh_token": secrets.token_urlsafe(32), "user_id": "x"},
-            HTTPStatus.UNPROCESSABLE_ENTITY,
-        ),
-        ({}, HTTPStatus.UNPROCESSABLE_ENTITY),
-    ],
-)
-async def test_invalid_refresh_requests_are_refused(
-    isolated_client: OutboxClient, payload: dict[str, object], status: int
-) -> None:
-    assert (await isolated_client.post(REFRESH_URL, json=payload)).status_code == status
 
 
 # requires : PostgreSQL est démarré et migré.
@@ -388,7 +366,7 @@ async def test_concurrent_refreshes_are_serialized(
 
     statuses = sorted(response.status_code for response in responses)
     assert statuses == [HTTPStatus.OK, HTTPStatus.UNAUTHORIZED]
-    winner = next(r for r in responses if r.status_code == HTTPStatus.OK).json()
+    winner = tokens_of(next(r for r in responses if r.status_code == HTTPStatus.OK))
     assert (await refresh(client, winner["refresh_token"])).status_code == HTTPStatus.UNAUTHORIZED
 
 

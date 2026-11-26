@@ -92,21 +92,16 @@ class LoginRequest(BaseModel):
     password: LoginPassword
 
 
-class RefreshRequest(BaseModel):
-    """Corps de `POST /auth/refresh` : le jeton voyage dans le corps, jamais dans l'URL."""
-
-    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
-
-    refresh_token: OpaqueTokenValue
-
-
 class TokenResponse(BaseModel):
-    """Paire de jetons renvoyée par la connexion et le renouvellement (RFC 6749, section 5.1)."""
+    """Jeton d'accès renvoyé par la connexion et le renouvellement (RFC 6749, section 5.1).
+
+    Le jeton de renouvellement n'y figure pas : il voyage uniquement dans un cookie `HttpOnly`,
+    hors de portée de JavaScript (voir `browser_session.py`).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     access_token: str = Field(repr=False)
-    refresh_token: str = Field(repr=False)
     token_type: Literal["bearer"]
     expires_in: int
 

@@ -40,7 +40,7 @@ export function TaskTitle({ task }: { task: PlanningEntry }): React.JSX.Element 
   `sessionStorage`, IndexedDB, un cookie lisible, une URL ou un journal.
 - Jeton de renouvellement : cookie `HttpOnly` posé par l'API, jamais lisible ni manipulé par le
   frontend. `credentials: "include"` est réservé aux routes d'authentification qui l'exigent.
-- Toute requête vers une route à cookie porte l'en-tête anti-CSRF défini par l'API.
+- Connexion et renouvellement portent l'en-tête anti-CSRF `X-CSRF-Protection: 1` exigé par l'API.
 - Renouveler avant expiration à partir de `expires_in`, jamais en décodant le JWT pour s'y fier.
 - Un seul renouvellement à la fois, tous onglets confondus (Web Locks) : deux rotations
   concurrentes déclenchent la détection de réutilisation et coupent la session.

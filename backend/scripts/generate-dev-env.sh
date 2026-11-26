@@ -50,7 +50,9 @@ TASKHANDLER_SMTP_HOST=127.0.0.1
 TASKHANDLER_SMTP_PORT=${smtp_port}
 TASKHANDLER_SMTP_SECURITY=none
 TASKHANDLER_EMAIL_FROM=ne-pas-repondre@taskhandler.fr
-TASKHANDLER_FRONTEND_BASE_URL=http://localhost:5173
+TASKHANDLER_FRONTEND_BASE_URL=http://localhost:3000
+# Le frontend Next.js de développement : seule origine admise par CORS et par l'anti-CSRF.
+TASKHANDLER_CORS_ALLOWED_ORIGINS=["http://localhost:3000"]
 EOF
 
 cat >"${target_dir}/.env.migration" <<EOF

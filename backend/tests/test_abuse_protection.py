@@ -8,7 +8,7 @@ from typing import Protocol
 import httpx2
 import pytest
 from fastapi import FastAPI
-from pydantic import SecretStr
+from pydantic import AnyHttpUrl, SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.types import Message, Receive, Scope, Send
 
@@ -19,9 +19,9 @@ from app.main import create_app
 from app.modules.auth.dependencies import AUTHENTICATED_DEPENDENCIES
 from app.modules.auth.limits import TOO_MANY_REQUESTS_DETAIL
 from tests.conftest import (
-    LOGIN_URL,
+    BROWSER_HEADERS,
+    FRONTEND_ORIGIN,
     LOGOUT_URL,
-    REFRESH_URL,
     REGISTER_URL,
     TEST_PASSPHRASE,
     DatabaseTestSettings,
@@ -31,6 +31,9 @@ from tests.conftest import (
     bearer,
     borrowing_factory,
     create_account,
+    post_login,
+    post_refresh,
+    tokens_of,
     unique_rate_limit_prefix,
     unreachable_redis_url,
 )
@@ -93,6 +96,7 @@ async def build_app(
                 database_url=database_settings.app_database_url,
                 redis_url=redis_url if redis_url is not None else database_settings.redis_url,
                 rate_limit_key_prefix=unique_rate_limit_prefix(),
+                cors_allowed_origins=(AnyHttpUrl(FRONTEND_ORIGIN),),
                 _env_file=None,
             )
         )
@@ -143,15 +147,14 @@ def client_from(application: FastAPI, ip: str) -> OutboxClient:
 
 # requires : `client` est relié à l'application de test.
 # assigns  : envoie une tentative de connexion.
-# ensures  : renvoie la réponse HTTP brute.
+# ensures  : renvoie la réponse HTTP brute ; la requête porte les en-têtes du frontend, complétés
+#            par `headers`.
 async def attempt(
     client: httpx2.AsyncClient,
     password: str = WRONG_PASSWORD,
     headers: dict[str, str] | None = None,
 ) -> httpx2.Response:
-    return await client.post(
-        LOGIN_URL, json={"email": EMAIL, "password": password}, headers=headers
-    )
+    return await post_login(client, EMAIL, password, headers={**BROWSER_HEADERS, **(headers or {})})
 
 
 # requires : `client` est relié à l'application de test.
@@ -230,9 +233,7 @@ async def test_login_is_limited_per_ip(build_app: AppBuilder) -> None:
     application = build_app(env={"TASKHANDLER_LOGIN_IP_LIMIT_PER_MINUTE": "3"})
     async with client_from(application, ATTACKER_IP) as client:
         for index in range(3):
-            response = await client.post(
-                LOGIN_URL, json={"email": f"cible{index}@exemple.org", "password": WRONG_PASSWORD}
-            )
+            response = await post_login(client, f"cible{index}@exemple.org", WRONG_PASSWORD)
             assert response.status_code == HTTPStatus.UNAUTHORIZED
         assert_rate_limited(await attempt(client), max_retry_after=60)
 
@@ -309,15 +310,13 @@ async def test_refresh_is_limited_per_user(build_app: AppBuilder) -> None:
     application = build_app(env={"TASKHANDLER_REFRESH_USER_LIMIT_PER_MINUTE": "2"})
     async with client_from(application, VICTIM_IP) as client:
         await register_victim(client)
-        tokens = (await attempt(client, TEST_PASSPHRASE)).json()
+        tokens = tokens_of(await attempt(client, TEST_PASSPHRASE))
         for _ in range(2):
-            response = await client.post(
-                REFRESH_URL, json={"refresh_token": tokens["refresh_token"]}
-            )
+            response = await post_refresh(client, tokens["refresh_token"])
             assert response.status_code == HTTPStatus.OK
-            tokens = response.json()
+            tokens = tokens_of(response)
 
-        response = await client.post(REFRESH_URL, json={"refresh_token": tokens["refresh_token"]})
+        response = await post_refresh(client, tokens["refresh_token"])
 
     assert_rate_limited(response, max_retry_after=60)
 
@@ -356,14 +355,14 @@ async def test_redis_outage_closes_auth_but_not_logout(
     healthy_app, degraded_app = healthy_and_degraded_apps
     async with client_from(healthy_app, VICTIM_IP) as healthy:
         await register_victim(healthy)
-        tokens = (await attempt(healthy, TEST_PASSPHRASE)).json()
+        tokens = tokens_of(await attempt(healthy, TEST_PASSPHRASE))
 
     async with client_from(degraded_app, VICTIM_IP) as degraded:
         register = await degraded.post(
             REGISTER_URL, json={"email": "nouveau@exemple.org", "password": TEST_PASSPHRASE}
         )
         login = await attempt(degraded, TEST_PASSPHRASE)
-        refresh = await degraded.post(REFRESH_URL, json={"refresh_token": tokens["refresh_token"]})
+        refresh = await post_refresh(degraded, tokens["refresh_token"])
         logout = await degraded.post(LOGOUT_URL, headers=bearer(tokens["access_token"]))
 
     assert register.status_code == HTTPStatus.SERVICE_UNAVAILABLE

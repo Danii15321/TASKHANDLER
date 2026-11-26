@@ -85,7 +85,7 @@ async def hash_password(plain: str) -> str:
 - Aucune donnée personnelle dans un JWT : `sub` contient l'UUID, rien de plus.
 - `get_current_user` recharge l'utilisateur en base, rejette tout compte inactif et compare
   `token_version`.
-- Jeton de renouvellement : `secrets.token_urlsafe(32)`, opaque, stocké uniquement en SHA-256.
+- Jeton de renouvellement : `token_urlsafe(32)`, haché en SHA-256, en cookie `HttpOnly` seulement.
 - Rotation à chaque usage, dans une transaction avec `SELECT … FOR UPDATE`. Un jeton déjà utilisé
   révoque toute sa famille.
 - Jetons à usage unique (e-mail, réinitialisation) : aléatoires, hachés, expirants, consommés
@@ -168,7 +168,7 @@ async def hash_password(plain: str) -> str:
 - CORS : liste explicite d'origines, jamais `*`. `TrustedHostMiddleware` actif.
 - En-têtes : `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` sur les réponses
   authentifiées, `Content-Security-Policy: default-src 'none'`, HSTS en production.
-- Jetons uniquement dans l'en-tête `Authorization` ou le corps, jamais dans une URL pour une route API.
+- Accès : en-tête `Authorization` ; renouvellement : cookie + anti-CSRF. Jamais de jeton en URL.
 - `POST`, `PATCH`, `PUT` et `DELETE` pour toute modification : un `GET` n'a jamais d'effet de bord.
 
 ## Dépendances

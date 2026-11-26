@@ -200,8 +200,9 @@ class Settings(BaseSettings):
     allowed_hosts: tuple[str, ...] = Field(
         default=("localhost", "127.0.0.1"), min_length=1, max_length=20
     )
-    # Origines autorisées à appeler l'API depuis un navigateur. Vide : CORS reste fermé, ce qui est
-    # le cas tant qu'il n'existe pas de frontend.
+    # Origines du frontend, seules autorisées à appeler l'API depuis un navigateur, avec cookies
+    # (CORS), et seules acceptées par les contrôles anti-CSRF. Vide : CORS reste fermé, et le
+    # renouvellement de session par cookie est impossible.
     cors_allowed_origins: tuple[AnyHttpUrl, ...] = Field(default=(), max_length=20)
 
     # Durées de conservation (RGPD, minimisation), appliquées par `python -m app.maintenance`.

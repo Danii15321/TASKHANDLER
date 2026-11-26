@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.main import create_app
+from app.modules.auth.browser_session import require_csrf_for_login, require_csrf_for_refresh
 from app.modules.auth.dependencies import enforce_user_rate_limit, get_current_user
 from tests.conftest import unreachable_database_url
 
@@ -111,3 +112,28 @@ def test_openapi_matches_declared_routes(app: FastAPI) -> None:
     }
 
     assert documented == set(declared_routes(app))
+
+
+# requires : `app` est assemblée.
+# assigns  : rien.
+# ensures  : les routes qui posent ou lisent le cookie de session portent leur contrôle anti-CSRF ;
+#            un contrôle retiré par erreur fait échouer ce test.
+def test_cookie_routes_are_protected_against_csrf(app: FastAPI) -> None:
+    routes = declared_routes(app)
+
+    assert require_csrf_for_login in dependency_calls(routes[("POST", "/api/v1/auth/login")])
+    assert require_csrf_for_refresh in dependency_calls(routes[("POST", "/api/v1/auth/refresh")])
+
+
+# requires : rien.
+# assigns  : la configuration globale des journaux.
+# ensures  : le jeton de renouvellement n'apparaît plus dans aucun schéma publié, ni en entrée ni
+#            en sortie, et le renouvellement n'accepte plus de corps.
+def test_refresh_token_never_travels_in_a_body() -> None:
+    settings = Settings.model_validate(
+        {"environment": "development", "database_url": unreachable_database_url()}
+    )
+    schema = TestClient(create_app(settings)).get("/openapi.json").json()
+
+    assert "refresh_token" not in str(schema["components"]["schemas"])
+    assert "requestBody" not in schema["paths"]["/api/v1/auth/refresh"]["post"]

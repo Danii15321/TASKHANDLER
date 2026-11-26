@@ -74,6 +74,8 @@ class IssuedTokens:
 
     access_token: str = field(repr=False)
     refresh_token: str = field(repr=False)
+    # Expiration du jeton de renouvellement : elle fixe la durée de vie du cookie qui le porte.
+    refresh_expires_at: datetime
 
 
 # requires : `email` est normalisé, `client_ip` vient de `get_client_ip`.
@@ -159,7 +161,9 @@ async def _issue_tokens(
         token_version=token_version,
         now=now,
     )
-    return IssuedTokens(access_token=access_token, refresh_token=refresh_token)
+    return IssuedTokens(
+        access_token=access_token, refresh_token=refresh_token, refresh_expires_at=expires_at
+    )
 
 
 # requires : `user` vient d'être authentifié, `now` porte un fuseau horaire.

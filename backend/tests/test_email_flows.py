@@ -8,9 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import (
     FORGOT_PASSWORD_URL,
-    LOGIN_URL,
     LOGOUT_URL,
-    REFRESH_URL,
     REGISTER_URL,
     RESET_PASSWORD_URL,
     TEST_PASSPHRASE,
@@ -20,6 +18,8 @@ from tests.conftest import (
     bearer,
     create_account,
     login_tokens,
+    post_login,
+    post_refresh,
 )
 
 pytestmark = pytest.mark.anyio
@@ -33,7 +33,7 @@ INVALID_LINK = "Lien invalide ou expiré."
 # assigns  : envoie une tentative de connexion.
 # ensures  : renvoie le code HTTP de la réponse.
 async def login_status(client: OutboxClient, password: str = TEST_PASSPHRASE) -> int:
-    response = await client.post(LOGIN_URL, json={"email": EMAIL, "password": password})
+    response = await post_login(client, EMAIL, password)
     return response.status_code
 
 
@@ -71,9 +71,7 @@ async def test_login_requires_verified_email(
 ) -> None:
     await isolated_client.post(REGISTER_URL, json={"email": EMAIL, "password": TEST_PASSPHRASE})
 
-    response = await isolated_client.post(
-        LOGIN_URL, json={"email": EMAIL, "password": TEST_PASSPHRASE}
-    )
+    response = await post_login(isolated_client, EMAIL, TEST_PASSPHRASE)
 
     assert response.status_code == HTTPStatus.FORBIDDEN
     assert response.headers["content-type"] == "application/problem+json"
@@ -193,9 +191,7 @@ async def test_reset_password_revokes_every_session(
     assert await login_status(isolated_client, NEW_PASSPHRASE) == HTTPStatus.OK
     stale_access = await isolated_client.post(LOGOUT_URL, headers=bearer(laptop["access_token"]))
     assert stale_access.status_code == HTTPStatus.UNAUTHORIZED
-    stale_refresh = await isolated_client.post(
-        REFRESH_URL, json={"refresh_token": laptop["refresh_token"]}
-    )
+    stale_refresh = await post_refresh(isolated_client, laptop["refresh_token"])
     assert stale_refresh.status_code == HTTPStatus.UNAUTHORIZED
     assert await reset(isolated_client, token, "encore une autre phrase 42") == (
         HTTPStatus.BAD_REQUEST

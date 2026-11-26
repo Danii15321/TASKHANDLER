@@ -17,7 +17,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic import SecretStr, model_validator
+from pydantic import AnyHttpUrl, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -29,6 +29,11 @@ from app.core.email import OutgoingEmail
 from app.core.logging_config import JsonFormatter
 from app.db.session import SessionFactory, get_session, get_session_factory
 from app.main import create_app
+from app.modules.auth.browser_session import (
+    CSRF_HEADER_NAME,
+    CSRF_HEADER_VALUE,
+    REFRESH_COOKIE_NAME,
+)
 
 LogReader = Callable[[], list[dict[str, object]]]
 
@@ -365,6 +370,8 @@ async def database_app(
             database_url=database_settings.app_database_url,
             redis_url=database_settings.redis_url,
             rate_limit_key_prefix=unique_rate_limit_prefix(),
+            # Le frontend de test : seule origine admise par CORS et par les contrôles CSRF.
+            cors_allowed_origins=(AnyHttpUrl(FRONTEND_ORIGIN),),
             _env_file=None,
         )
     )
@@ -429,6 +436,10 @@ VERIFY_EMAIL_URL = "/api/v1/auth/verify-email"
 FORGOT_PASSWORD_URL = "/api/v1/auth/password/forgot"
 RESET_PASSWORD_URL = "/api/v1/auth/password/reset"
 TEST_PASSPHRASE = "violet ruisseau lanterne 2026"
+# Origine du frontend de test, déclarée dans la liste CORS de `database_app`.
+FRONTEND_ORIGIN = "http://localhost:3000"
+# En-têtes qu'envoie le frontend vers les routes qui posent ou lisent le cookie de session.
+BROWSER_HEADERS = {CSRF_HEADER_NAME: CSRF_HEADER_VALUE, "Origin": FRONTEND_ORIGIN}
 
 
 # requires : `client` est relié à l'application de test.
@@ -451,16 +462,71 @@ async def create_account(
     return str(account_id)
 
 
+# requires : `response` vient d'une route qui pose le cookie de renouvellement.
+# assigns  : rien.
+# ensures  : renvoie la valeur du cookie posé ; échoue s'il est absent.
+def refresh_cookie_of(response: httpx2.Response) -> str:
+    # Lecture directe de `Set-Cookie` : le client de test, en HTTP, ne renverrait jamais seul un
+    # cookie `Secure`. Chaque test envoie donc le cookie explicitement, ce qui le rend lisible.
+    for header in response.headers.get_list("set-cookie"):
+        name, _, rest = header.partition("=")
+        if name == REFRESH_COOKIE_NAME:
+            return rest.split(";", 1)[0].strip('"')
+    raise AssertionError("cookie de renouvellement absent de la réponse")
+
+
+# requires : `client` est relié à l'application de test.
+# assigns  : ouvre une session si les identifiants sont bons.
+# ensures  : renvoie la réponse de `POST /auth/login`, envoyée comme le fait le frontend (ou
+#            avec `headers` à la place, pour tester les contrôles CSRF).
+async def post_login(
+    client: httpx2.AsyncClient,
+    email: str = "alice@exemple.org",
+    password: str = TEST_PASSPHRASE,
+    *,
+    headers: dict[str, str] | None = None,
+) -> httpx2.Response:
+    return await client.post(
+        LOGIN_URL,
+        json={"email": email, "password": password},
+        headers=BROWSER_HEADERS if headers is None else headers,
+    )
+
+
 # requires : `client` est relié à l'application de test, le compte existe.
 # assigns  : ouvre une session.
-# ensures  : renvoie la paire de jetons ; échoue si la connexion est refusée.
+# ensures  : renvoie le jeton d'accès (corps) et le jeton de renouvellement (cookie) ; échoue si
+#            la connexion est refusée.
 async def login_tokens(
     client: httpx2.AsyncClient, email: str = "alice@exemple.org", password: str = TEST_PASSPHRASE
 ) -> dict[str, str]:
-    response = await client.post(LOGIN_URL, json={"email": email, "password": password})
+    response = await post_login(client, email, password)
     assert response.status_code == 200, response.text
-    tokens: dict[str, str] = response.json()
-    return tokens
+    return tokens_of(response)
+
+
+# requires : `response` est une réponse `200` de connexion ou de renouvellement.
+# assigns  : rien.
+# ensures  : renvoie le jeton d'accès, lu dans le corps, et le jeton de renouvellement, lu dans le
+#            cookie (le seul endroit où il voyage désormais).
+def tokens_of(response: httpx2.Response) -> dict[str, str]:
+    return {
+        "access_token": response.json()["access_token"],
+        "refresh_token": refresh_cookie_of(response),
+    }
+
+
+# requires : `client` est relié à l'application de test.
+# assigns  : consomme le jeton de renouvellement s'il est valide.
+# ensures  : renvoie la réponse de `POST /auth/refresh`, cookie et en-têtes envoyés comme le fait
+#            le navigateur (ou `headers` à la place, pour tester les contrôles CSRF).
+async def post_refresh(
+    client: httpx2.AsyncClient, refresh_token: str | None, *, headers: dict[str, str] | None = None
+) -> httpx2.Response:
+    sent = dict(BROWSER_HEADERS if headers is None else headers)
+    if refresh_token is not None:
+        sent["Cookie"] = f"{REFRESH_COOKIE_NAME}={refresh_token}"
+    return await client.post(REFRESH_URL, headers=sent)
 
 
 # requires : rien.

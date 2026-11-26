@@ -40,7 +40,7 @@ le jeton de renouvellement hors de portée de JavaScript.
 | 0 | Socle Next.js et outillage qualité | Terminée |
 | 1 | Application minimale sûre par défaut | Terminée |
 | 2 | Intégration continue du frontend | En relecture |
-| 3 | Adaptation de l'API au navigateur | À faire |
+| 3 | Adaptation de l'API au navigateur | Terminée |
 | 4 | Client API et gestion de session | À faire |
 | 5 | Parcours de compte | À faire |
 | 6 | Tâches | À faire |
@@ -110,18 +110,17 @@ secret sont bloqués dès la première ligne.
 **Objectif :** permettre au navigateur d'utiliser l'API sans jamais exposer le jeton de
 renouvellement à JavaScript, ni ouvrir de faille CSRF.
 
-- [ ] Rédiger `frontend/docs/steps/step-3.md`
-- [ ] Poser le jeton de renouvellement dans un cookie `__Secure-`, `HttpOnly`, `Secure`,
-      `SameSite=Strict`, limité au chemin `/api/v1/auth`, à la connexion et à chaque rotation
-- [ ] Lire ce cookie dans `POST /auth/refresh`, `/auth/logout` et `/auth/logout-all` ; l'effacer à
-      la déconnexion et à toute révocation
-- [ ] Ne plus renvoyer le jeton de renouvellement dans le corps pour un client navigateur, et
-      consigner le sort du flux par corps
-- [ ] Protéger les routes à cookie contre le CSRF : origine vérifiée contre la liste autorisée et
+- [x] Rédiger `frontend/docs/steps/step-3.md`
+- [x] Poser le jeton de renouvellement dans un cookie `__Secure-`, `HttpOnly`, `Secure`,
+      `SameSite=Strict`, limité au chemin `/api/v1/auth/refresh`, à la connexion et à chaque rotation
+- [x] Lire ce cookie dans `POST /auth/refresh` ; l'effacer à la déconnexion (simple ou globale) et
+      à tout renouvellement refusé
+- [x] Ne plus renvoyer le jeton de renouvellement dans aucun corps : flux par corps supprimé
+- [x] Protéger les routes à cookie contre le CSRF : origine vérifiée contre la liste autorisée et
       en-tête personnalisé obligatoire
-- [ ] Activer `allow_credentials` dans CORS pour les seules origines explicites du frontend
-- [ ] Mettre à jour le contrat OpenAPI, le README et les tests de sécurité du backend
-- [ ] Tester : cookie absent ou falsifié, origine étrangère, en-tête CSRF manquant, réutilisation
+- [x] Activer `allow_credentials` dans CORS pour les seules origines explicites du frontend
+- [x] Mettre à jour le contrat OpenAPI, le README et les tests de sécurité du backend
+- [x] Tester : cookie absent ou falsifié, origine étrangère, en-tête CSRF manquant, réutilisation
 
 **Terminé lorsque :** une page d'une autre origine ne peut ni renouveler ni fermer la session, et
 aucune réponse de l'API ne contient plus le jeton de renouvellement.

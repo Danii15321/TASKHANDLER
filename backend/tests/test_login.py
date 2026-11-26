@@ -14,18 +14,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.passwords import PasswordHasherService, PasswordHashingBusyError
 from app.core.tokens import hash_opaque_token
 from tests.conftest import (
+    BROWSER_HEADERS,
     LOGIN_URL,
     TEST_PASSPHRASE,
     LogReader,
     OutboxClient,
     create_account,
     login_tokens,
+    post_login,
 )
 
 pytestmark = pytest.mark.anyio
 
 EMAIL = "alice@exemple.org"
-TOKEN_FIELDS = {"access_token", "refresh_token", "token_type", "expires_in"}
+# Le jeton de renouvellement n'est plus dans le corps : il voyage dans un cookie `HttpOnly`.
+TOKEN_FIELDS = {"access_token", "token_type", "expires_in"}
 REQUIRED_HASH_PREFIX = "$argon2id$v=19$m=65536,t=3,p=4$"
 
 
@@ -35,7 +38,7 @@ REQUIRED_HASH_PREFIX = "$argon2id$v=19$m=65536,t=3,p=4$"
 async def attempt_login(
     client: httpx2.AsyncClient, email: str = EMAIL, password: str = TEST_PASSPHRASE
 ) -> httpx2.Response:
-    return await client.post(LOGIN_URL, json={"email": email, "password": password})
+    return await post_login(client, email, password)
 
 
 # requires : `response` est une réponse d'erreur au format RFC 9457.
@@ -210,7 +213,7 @@ async def test_login_upgrades_outdated_hash(
 async def test_invalid_login_payload_is_refused(
     isolated_client: OutboxClient, payload: dict[str, object]
 ) -> None:
-    response = await isolated_client.post(LOGIN_URL, json=payload)
+    response = await isolated_client.post(LOGIN_URL, json=payload, headers=BROWSER_HEADERS)
 
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
     assert TEST_PASSPHRASE not in response.text

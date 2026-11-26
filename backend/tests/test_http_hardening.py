@@ -46,7 +46,9 @@ def client_for(environment: Environment, **overrides: object) -> TestClient:
         ("GET", "/inconnue", HTTPStatus.NOT_FOUND),
         ("POST", "/health/live", HTTPStatus.METHOD_NOT_ALLOWED),
         ("GET", "/api/v1/users/me", HTTPStatus.UNAUTHORIZED),
-        ("POST", "/api/v1/auth/login", HTTPStatus.UNPROCESSABLE_ENTITY),
+        # Sans l'en-tête anti-CSRF, la connexion est refusée avant même de lire le corps.
+        ("POST", "/api/v1/auth/login", HTTPStatus.FORBIDDEN),
+        ("POST", "/api/v1/auth/refresh", HTTPStatus.FORBIDDEN),
         ("GET", "/boom", HTTPStatus.INTERNAL_SERVER_ERROR),
     ],
 )
@@ -118,18 +120,27 @@ def test_cors_is_closed_by_default(client: TestClient) -> None:
 
 # requires : rien.
 # assigns  : la configuration globale des journaux.
-# ensures  : seule l'origine listée est autorisée, sans cookies ; une autre origine ne reçoit rien.
+# ensures  : seule l'origine listée est autorisée, avec cookies et l'en-tête anti-CSRF ; une autre
+#            origine ne reçoit rien, et le navigateur bloque donc la requête avant son envoi.
 def test_cors_allows_only_listed_origins() -> None:
     client = client_for("test", cors_allowed_origins=[ORIGIN])
-    preflight = {"Access-Control-Request-Method": "POST"}
+    preflight = {
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type, x-csrf-protection",
+    }
 
-    allowed = client.options("/api/v1/auth/login", headers={"Origin": ORIGIN, **preflight})
+    allowed = client.options("/api/v1/auth/refresh", headers={"Origin": ORIGIN, **preflight})
     other = client.options(
-        "/api/v1/auth/login", headers={"Origin": "https://attaquant.exemple.org", **preflight}
+        "/api/v1/auth/refresh", headers={"Origin": "https://attaquant.exemple.org", **preflight}
     )
 
+    assert allowed.status_code == HTTPStatus.OK
     assert allowed.headers["access-control-allow-origin"] == ORIGIN
-    assert "access-control-allow-credentials" not in allowed.headers
+    assert allowed.headers["access-control-allow-credentials"] == "true"
+    assert "x-csrf-protection" in allowed.headers["access-control-allow-headers"].lower()
+    # Refus explicite, sans `Access-Control-Allow-Origin` : le navigateur n'envoie jamais la
+    # requête. (Starlette ajoute `Allow-Credentials` même au refus ; seul, il est sans effet.)
+    assert other.status_code == HTTPStatus.BAD_REQUEST
     assert "access-control-allow-origin" not in other.headers
 
 
